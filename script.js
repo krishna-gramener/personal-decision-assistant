@@ -1,4 +1,5 @@
 import { getProfile } from "https://aipipe.org/aipipe.js";
+import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 // DOM Elements
 const questionForm = document.getElementById("questionForm");
 const questionInput = document.getElementById("questionInput");
@@ -15,10 +16,11 @@ let key="";
 init();
 
 async function init() {
-  const { token } = getProfile();
+  const { token, email} = getProfile();
   if (!token)
     window.location = `https://aipipe.org/login?redirect=${window.location.href}`;
   key=token;
+  console.log(email);
 }
 
 // Show loading state
@@ -205,6 +207,7 @@ async function generateExpertSummary(question, expert, questionsAndAnswers) {
 
 // Helper to extract mermaid code from LLM response
 function extractMermaidCode(response) {
+  console.log(response);
   const mermaidMatch = response.match(/```mermaid\s*([\s\S]*?)```/i);
   return mermaidMatch ? mermaidMatch[1].trim() : '';
 }
@@ -272,6 +275,133 @@ async function generateFinalAnswer(question, expertsData) {
   }
 }
 
+async function generateCumulativeMindmapWithLLM(question, expertsData, finalAnswer){
+
+  showLoading("Generating Final Mindmap...");
+
+  const systemPrompt = `
+  You are an assistant tasked with visualizing the synthesis of insights from multiple experts.
+  
+  Your task:
+  - Synthesize the mindmaps of all experts into a single, cumulative mindmap.
+  - Merge overlapping concepts, show consensus and unique contributions.
+  - Preserve the hierarchical structure of the mindmap.
+  
+  Output:
+  - Output ONLY a JSON object with the following format, and nothing else.
+  
+  Example format:
+  {
+    "nodes": [
+      { "id": "root", "label": "Main Topic", "experts": [1,2,3] },
+      { "id": "sub1", "label": "Subtopic", "experts": [1,2] },
+      { "id": "sub2", "label": "Another Subtopic", "experts": [2,3] }
+      // ... more nodes
+    ],
+    "edges": [
+      { "from": "root", "to": "sub1" },
+      { "from": "root", "to": "sub2" }
+      // ... more edges
+    ]
+  }
+  
+  Guidelines:
+  - Each node must have a unique "id", a "label" (the concept text), and an "experts" array (listing which experts contributed to that node, e.g., [1,2]).
+  - The "edges" array should define parent-child relationships between nodes using their "id".
+  - Keep it concise and not more than 50 nodes
+  - Do not include any explanations, comments, or extra text—only the JSON object.
+  `;
+ 
+  const userMessage = `
+    Question: ${question}
+    Final Answer: ${finalAnswer}
+    Experts:
+    ${expertsData
+      .map(
+        (expert) =>
+          `Expert: ${expert.name}, ${expert.title} (${expert.specialty} \n)
+           Expert Mindmap: ${expert.mermaid}\n`
+      )
+      .join("\n\n")}
+  `;
+
+  try {
+    const response = await callOpenAI(systemPrompt, userMessage);
+    console.log("Final Mindmap response:", response);
+    return JSON.parse(response);
+  } catch (error) {
+    throw new Error(`Failed to generate cumulative mindmap: ${error.message}`);
+  }
+}
+
+function renderCumulativeMindmap(data) {
+  const width = 1500, height = 1000;
+
+  // Clear previous visualization
+  d3.select("#cumulative-mindmap").html("");
+
+  const svg = d3.select("#cumulative-mindmap")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // Create a map of nodes for quick lookup
+  const nodeMap = {};
+  data.nodes.forEach(node => nodeMap[node.id] = node);
+
+  // Build a hierarchy for D3 from the flat node list
+  function buildHierarchy(rootId) {
+    const root = nodeMap[rootId];
+    root.children = data.edges
+      .filter(e => e.from === rootId)
+      .map(e => buildHierarchy(e.to));
+    return root;
+  }
+  const root = d3.hierarchy(buildHierarchy("root"));
+
+  // Create a tree layout
+  const tree = d3.tree().size([width - 100, height - 100]);
+  const treeData = tree(root);
+
+  // Draw links
+  svg.selectAll(".link")
+    .data(treeData.links())
+    .enter().append("path")
+    .attr("class", "link")
+    .attr("d", d3.linkHorizontal()
+      .x(d => d.y + 50)
+      .y(d => d.x + 50))
+    .style("fill", "none")
+    .style("stroke", "#aaa");
+
+  // Draw nodes
+  const node = svg.selectAll(".node")
+    .data(treeData.descendants())
+    .enter().append("g")
+    .attr("class", "node")
+    .attr("transform", d => `translate(${d.y + 50},${d.x + 50})`);
+
+  node.append("circle")
+    .attr("r", 18)
+    .attr("fill", d => {
+      // Color nodes based on expert overlap
+      if (d.data.experts.length === 3) return "#FFD700"; // all experts
+      if (d.data.experts.length === 2) return "#87CEEB";
+      return "#90EE90";
+    })
+    .attr("stroke", "#333");
+
+  node.append("text")
+    .attr("dy", 5)
+    .attr("x", 25)
+    .text(d => d.data.label)
+    .style("font-size", "14px");
+
+  // Add tooltip on hover
+  node.append("title")
+    .text(d => `Experts: ${d.data.experts.join(", ")}`);
+}
+
 // Process the question
 async function processQuestion(question) {
   try {
@@ -321,7 +451,12 @@ async function processQuestion(question) {
         finalAnswer
       );
     }
+    console.log("Experts data:", expertsData);
 
+    const cumulativeMindMap=await generateCumulativeMindmapWithLLM(question,expertsData,finalAnswer);
+    
+    console.log("Cumulative mindmap:", cumulativeMindMap);
+    
     // Display results
     hideLoading();
     resultsContainer.classList.remove("hidden");
@@ -358,8 +493,7 @@ async function processQuestion(question) {
       }, 0);
     });
     finalAnswerElement.textContent = finalAnswer;
-
-
+    renderCumulativeMindmap(cumulativeMindMap);
   } catch (error) {
     hideLoading();
     showError(error.message);
