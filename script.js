@@ -1,4 +1,3 @@
-import { getProfile } from "https://aipipe.org/aipipe.js";
 // DOM Elements
 const questionForm = document.getElementById("questionForm");
 const questionInput = document.getElementById("questionInput");
@@ -11,15 +10,60 @@ const originalQuestionElement = document.getElementById("originalQuestion");
 const expertsContainer = document.getElementById("expertsContainer");
 const finalAnswerElement = document.getElementById("finalAnswer");
 const mindmapsContainer = document.getElementById("mindmapsContainer");
-let key="";
-init();
+let key = "";
 
-async function init() {
-  const { token } = getProfile();
-  if (!token)
-    window.location = `https://aipipe.org/login?redirect=${window.location.href}`;
-  key=token;
-}
+// Hide main content until API is set
+window.addEventListener("DOMContentLoaded", () => {
+  // Check for saved API key in localStorage (with expiry)
+  const apiTokenData = localStorage.getItem("apiToken");
+  if (apiTokenData) {
+    try {
+      const { token, expiry } = JSON.parse(apiTokenData);
+      const now = Date.now();
+      if (expiry && now < expiry) {
+        key = token;
+        apiBox.classList.add("d-none");
+        document.getElementById("resultsContainer").style.display = "";
+        document.getElementById("questionForm").style.display = "";
+        document.getElementById("mindmapsContainer").style.display = "";
+      } else {
+        // Expired, remove from storage
+        localStorage.removeItem("apiToken");
+        document.getElementById("resultsContainer").style.display = "none";
+        document.getElementById("questionForm").style.display = "none";
+        document.getElementById("mindmapsContainer").style.display = "none";
+      }
+    } catch {
+      // Fallback: clear invalid data
+      localStorage.removeItem("apiToken");
+      document.getElementById("resultsContainer").style.display = "none";
+      document.getElementById("questionForm").style.display = "none";
+      document.getElementById("mindmapsContainer").style.display = "none";
+    }
+  } else {
+    document.getElementById("resultsContainer").style.display = "none";
+    document.getElementById("questionForm").style.display = "none";
+    document.getElementById("mindmapsContainer").style.display = "none";
+  }
+});
+
+const apiBox = document.getElementById("apiBox");
+const apiForm = document.getElementById("apiForm");
+const apiInput = document.getElementById("apiInput");
+
+apiForm.addEventListener("submit", function(e) {
+  e.preventDefault();
+  key = apiInput.value.trim();
+  if (!key) return;
+  // Set expiry to 1 day from now
+  const expiry = Date.now() + 24 * 60 * 60 * 1000;
+  localStorage.setItem("apiToken", JSON.stringify({ token: key, expiry }));
+  // Hide API box, show main content
+  apiBox.classList.add("d-none");
+  document.getElementById("resultsContainer").style.display = "";
+  document.getElementById("questionForm").style.display = "";
+  document.getElementById("mindmapsContainer").style.display = "";
+});
 
 // Show loading state
 function showLoading(message) {
@@ -358,8 +402,6 @@ async function processQuestion(question) {
       }, 0);
     });
     finalAnswerElement.textContent = finalAnswer;
-
-
   } catch (error) {
     hideLoading();
     showError(error.message);
