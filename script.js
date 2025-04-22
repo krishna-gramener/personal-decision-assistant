@@ -15,7 +15,7 @@ let key="";
 init();
 
 async function init() {
-  const { token, email } = getProfile();
+  const { token } = getProfile();
   if (!token)
     window.location = `https://aipipe.org/login?redirect=${window.location.href}`;
   key=token;
@@ -221,7 +221,7 @@ Given:
 ${questionsAndAnswers.map((qa, idx) => `  Q${idx+1}: ${qa.question}\n  A${idx+1}: ${qa.answer}`).join('\n')}
 - The final answer synthesized from all experts: "${finalAnswer}"
 
-Create a Mermaid mindmap (inside a \`\`\`mermaid code block) that best represents this expert's thinking, their contributions, and their relationship to the final answer. Use your judgment to structure the mindmap for clarity and insight. Only output the Mermaid code block.`;
+Create a Mermaid Mindmap (inside a \`\`\`mermaid code block) that best represents this expert's thinking, their contributions, and their relationship to the final answer. Use your judgment to structure the mindmap for clarity and insight. Only output the Mermaid code block.`;
 
   const userMessage = '';
   try {
@@ -359,9 +359,7 @@ async function processQuestion(question) {
     });
     finalAnswerElement.textContent = finalAnswer;
 
-    // Optionally, add to history
-    const historyItem = document.createElement("li");
-    historyItem.textContent = question;
+
   } catch (error) {
     hideLoading();
     showError(error.message);
