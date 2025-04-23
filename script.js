@@ -11,59 +11,16 @@ const expertsContainer = document.getElementById("expertsContainer");
 const finalAnswerElement = document.getElementById("finalAnswer");
 const mindmapsContainer = document.getElementById("mindmapsContainer");
 let key = "";
+init();
 
-// Hide main content until API is set
-window.addEventListener("DOMContentLoaded", () => {
-  // Check for saved API key in localStorage (with expiry)
-  const apiTokenData = localStorage.getItem("apiToken");
-  if (apiTokenData) {
-    try {
-      const { token, expiry } = JSON.parse(apiTokenData);
-      const now = Date.now();
-      if (expiry && now < expiry) {
-        key = token;
-        apiBox.classList.add("d-none");
-        document.getElementById("resultsContainer").style.display = "";
-        document.getElementById("questionForm").style.display = "";
-        document.getElementById("mindmapsContainer").style.display = "";
-      } else {
-        // Expired, remove from storage
-        localStorage.removeItem("apiToken");
-        document.getElementById("resultsContainer").style.display = "none";
-        document.getElementById("questionForm").style.display = "none";
-        document.getElementById("mindmapsContainer").style.display = "none";
-      }
-    } catch {
-      // Fallback: clear invalid data
-      localStorage.removeItem("apiToken");
-      document.getElementById("resultsContainer").style.display = "none";
-      document.getElementById("questionForm").style.display = "none";
-      document.getElementById("mindmapsContainer").style.display = "none";
-    }
-  } else {
-    document.getElementById("resultsContainer").style.display = "none";
-    document.getElementById("questionForm").style.display = "none";
-    document.getElementById("mindmapsContainer").style.display = "none";
+async function init(){
+  const { token } = await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json());
+
+  if(!token){
+    window.location = `https://llmfoundry.straive.com?redirect=${window.location.href}`;
   }
-});
-
-const apiBox = document.getElementById("apiBox");
-const apiForm = document.getElementById("apiForm");
-const apiInput = document.getElementById("apiInput");
-
-apiForm.addEventListener("submit", function(e) {
-  e.preventDefault();
-  key = apiInput.value.trim();
-  if (!key) return;
-  // Set expiry to 1 day from now
-  const expiry = Date.now() + 24 * 60 * 60 * 1000;
-  localStorage.setItem("apiToken", JSON.stringify({ token: key, expiry }));
-  // Hide API box, show main content
-  apiBox.classList.add("d-none");
-  document.getElementById("resultsContainer").style.display = "";
-  document.getElementById("questionForm").style.display = "";
-  document.getElementById("mindmapsContainer").style.display = "";
-});
+  key = token;
+}
 
 // Show loading state
 function showLoading(message) {
@@ -87,12 +44,12 @@ function showError(message) {
 async function callOpenAI(systemPrompt, userMessage) {
   try {
     const response = await fetch(
-      "https://aipipe.org/openrouter/v1/chat/completions",
+      "https://llmfoundry.straive.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "openai/gpt-4.1-nano",
+          model: "gpt-4.1-nano",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage },
