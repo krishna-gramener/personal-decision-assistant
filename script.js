@@ -403,7 +403,7 @@ async function extractPdfData(file) {
   try {
     const base64Data = await fileToBase64(file);
     const response = await fetch(
-      "https://llmfoundry.straive.com/gemini/v1beta/models/gemini-2.0-flash:generateContent",
+      "GEMINI API URL",
       {
         method: "POST",
         headers: {
