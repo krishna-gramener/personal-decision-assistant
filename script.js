@@ -1,3 +1,5 @@
+const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
+
 // DOM Elements
 const questionForm = document.getElementById("questionForm");
 const questionInput = document.getElementById("questionInput");
@@ -13,12 +15,36 @@ const fileName = document.getElementById("fileName");
 const fileList = document.getElementById("fileList");
 const chatContainer = document.getElementById("chatContainer");
 const followupContainer = document.getElementById("followupContainer");
-let key =
-  "API TOKEN";
+const viewAllDataBtn = document.getElementById("viewAllDataBtn");
+
+// Global variables
+let key = "";
+let currentExpertsData = [];
+let sheetData = [];
+
+// Function to get appropriate icon class based on file type
+const getFileIcon = filename => {
+  const icons = {
+    xlsx: 'spreadsheet text-success',
+    xls: 'spreadsheet text-success',
+    csv: 'text text-success',
+    pdf: 'pdf text-danger',
+    doc: 'word text-primary',
+    docx: 'word text-primary'
+  };
+  return `bi bi-file-earmark-${icons[filename.split('.').pop().toLowerCase()] || 'text'}`;
+};
+
 // Store conversation history
 let conversationHistory = [];
-// Store current experts data
-let currentExpertsData = [];
+
+// Store extracted data from files
+let extractedData = {
+  pdfs: [],
+  excel: [],
+  csv: [],
+  docx: [],
+};
 
 
 // Show loading state
@@ -243,13 +269,11 @@ function extractMermaidCode(response) {
       console.warn('No mermaid code block found in response');
       return null;
     }
-    
     const code = mermaidMatch[1].trim();
     if (!code.startsWith('mindmap')) {
       console.warn('Invalid mindmap code - does not start with mindmap');
       return null;
     }
-    
     return code;
   } catch (error) {
     console.error('Error extracting mermaid code:', error);
@@ -365,13 +389,179 @@ async function generateFinalAnswer(question, expertsData) {
   }
 }
 
-// Store extracted data from files
-let extractedData = {
-  pdfs: [],
-  excel: [],
-  csv: [],
-  docx: [],
-};
+// Function to convert file to base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = (error) => reject(error);
+  });
+}
+
+// Function to extract text from PDF using Gemini
+async function extractPdfData(file) {
+  try {
+    const base64Data = await fileToBase64(file);
+    const response = await fetch("GEMINI_API_URL", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: "Extract the text content from the provided PDF." }] },
+        contents: [{
+          role:"user",parts: [{ inlineData: { mimeType: "application/pdf", data: base64Data} }]
+        }]
+      })
+    });
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    console.error("Error extracting PDF:", error);
+    throw new Error(`Failed to extract PDF data: ${error.message}`);
+  }
+}
+
+// Function to extract data from Excel files
+async function extractExcelData(file) {
+  const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+  workbook.SheetNames.forEach(sheetName => {
+    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+    sheetData.push({ fileName: file.name, sheetName, data: jsonData });
+  });
+  extractedData.excel.push({ fileName: file.name, content: workbook });
+  return workbook;
+}
+
+// Function to extract data from CSV files
+async function extractCsvData(file) {
+  const csvData = await file.text();
+  const workbook = XLSX.read(csvData, { type: 'string' });
+  const sheetName = workbook.SheetNames[0];
+  const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+  sheetData.push({ fileName: file.name, sheetName: 'Sheet1', data: jsonData });
+  extractedData.csv.push({ fileName: file.name, content: jsonData });
+  return jsonData;
+}
+
+// Function to extract data from DOCX files
+async function extractDocxData(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const docxText = result.value;
+    return docxText;
+  } catch (error) {
+    console.error("Error extracting DOCX:", error);
+    throw new Error(`Failed to extract DOCX data: ${error.message}`);
+  }
+}
+
+// Function to handle file upload
+async function handleFileUpload(files) {
+  showLoading("Processing Files...");
+  sheetData = [];
+  extractedData = { pdfs: [], excel: [], csv: [], docx: [] };
+  const fileInfo = document.getElementById("fileInfo");
+  const fileName = document.getElementById("fileName");
+  const fileList = document.getElementById("fileList");
+  const viewAllDataBtn = document.getElementById("viewAllDataBtn");
+  try {
+    fileList.innerHTML = '';
+    let hasSpreadsheetFiles = false;
+    for (const file of files) {
+      const listItem = document.createElement("li");
+      listItem.className = "file-item mb-2 d-flex align-items-center";
+      listItem.appendChild(Object.assign(document.createElement("i"), { className: getFileIcon(file.name) }));
+      listItem.appendChild(Object.assign(document.createElement("span"), { className: "ms-2 me-auto", textContent: file.name }));
+      fileList.appendChild(listItem);
+      const ext = file.name.split('.').pop().toLowerCase();
+      try {
+        if (["xlsx", "xls"].includes(ext)) {
+          await extractExcelData(file);
+          hasSpreadsheetFiles = true;
+        } else if (ext === "csv") {
+          await extractCsvData(file);
+          hasSpreadsheetFiles = true;
+        } else if (ext === "pdf") {
+          const pdfText = await extractPdfData(file);
+          extractedData.pdfs.push({ filename: file.name, content: pdfText });
+        } else if (ext === "docx") {
+          const docxText = await extractDocxData(file);
+          extractedData.docx.push({ filename: file.name, content: docxText });
+        } else {
+          console.warn(`Unsupported file type: ${ext}`);
+        }
+        listItem.appendChild(Object.assign(document.createElement("i"), { className: "bi bi-check-circle-fill text-success ms-2" }));
+      } catch (error) {
+        console.error(`Error processing file ${file.name}:`, error);
+        listItem.appendChild(Object.assign(document.createElement("i"), { className: "bi bi-exclamation-circle-fill text-danger ms-2", title: "Error processing file" }));
+      }
+    }
+    viewAllDataBtn.style.display = hasSpreadsheetFiles ? 'inline-block' : 'none';
+    fileInfo.classList.remove("hidden");
+    fileName.textContent = `${files.length} file(s) uploaded successfully`;
+    document.getElementById("questionInput").disabled = false;
+    document.querySelector("#questionForm button").disabled = false;
+    return extractedData;
+  } catch (error) {
+    console.error("Error processing files:", error);
+    showError("Error processing files. Please try again.");
+    throw error;
+  }
+}
+
+// Update file input event listener
+document.getElementById("fileInput").addEventListener("change", async e => {
+  if (e.target.files.length) try { await handleFileUpload(e.target.files);hideLoading() } catch (err) { showError(err.message); }
+});
+
+// Function to show all data in modal
+async function showAllData() {
+  const container = document.getElementById('dataTablesContainer');
+  container.innerHTML = '';
+  // Group sheets by file name
+  const fileGroups = {};
+  sheetData.forEach(sheet => {
+    (fileGroups[sheet.fileName] ||= []).push(sheet);
+  });
+  // Create sections for each file and sheet
+  Object.entries(fileGroups).forEach(([fileName, sheets]) => {
+    const fileSection = Object.assign(document.createElement('div'), { className: 'table-section' });
+    fileSection.appendChild(Object.assign(document.createElement('h5'), { textContent: fileName }));
+    sheets.forEach(sheet => {
+      const sheetSection = Object.assign(document.createElement('div'), { className: 'mb-4' });
+      sheetSection.appendChild(Object.assign(document.createElement('h6'), { className: 'mb-3', textContent: sheet.sheetName }));
+      const table = Object.assign(document.createElement('table'), { className: 'table table-striped table-bordered' });
+      // Header
+      if (sheet.data.length > 0) {
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        sheet.data[0].forEach(header => {
+          headerRow.appendChild(Object.assign(document.createElement('th'), { textContent: header || '' }));
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+      }
+      // Body
+      const tbody = document.createElement('tbody');
+      sheet.data.slice(1).forEach(row => {
+        const tr = document.createElement('tr');
+        row.forEach(cell => tr.appendChild(Object.assign(document.createElement('td'), { textContent: cell || '' })));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      const tableWrapper = Object.assign(document.createElement('div'), { className: 'table-responsive' });
+      tableWrapper.appendChild(table);
+      sheetSection.appendChild(tableWrapper);
+      fileSection.appendChild(sheetSection);
+    });
+    container.appendChild(fileSection);
+  });
+  new bootstrap.Modal(document.getElementById('dataTablesModal')).show();
+}
+
+// Add event listener for view all data button
+document.getElementById('viewAllDataBtn').addEventListener('click', showAllData);
 
 // Add message to conversation history
 function addToHistory(question, answer, isUser = true) {
@@ -388,352 +578,64 @@ function getConversationContext() {
     .join('\n\n');
 }
 
-// Function to convert file to base64
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = (error) => reject(error);
-  });
-}
-
-// Function to extract text from PDF using Gemini
-async function extractPdfData(file) {
-  try {
-    const base64Data = await fileToBase64(file);
-    const response = await fetch(
-      "GEMINI API URL",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              system_instruction: {
-                parts: [
-                  {
-                    text: `Extract the text content from the provided PDF.
-              `,
-                  },
-                ],
-              },
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: "application/pdf",
-                    data: base64Data,
-                  },
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
-
-    const data = await response.json();
-    return data.candidates[0].content.parts[0].text;
-  } catch (error) {
-    console.error("Error extracting PDF:", error);
-    throw new Error(`Failed to extract PDF data: ${error.message}`);
-  }
-}
-
-// Function to extract data from Excel files
-async function extractExcelData(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
-        resolve(jsonData);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// Function to extract data from CSV files
-async function extractCsvData(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const text = e.target.result;
-        const rows = text.split("\n");
-        const headers = rows[0].split(",").map((header) => header.trim());
-        const jsonData = rows.slice(1).map((row) => {
-          const values = row.split(",").map((value) => value.trim());
-          return headers.reduce((obj, header, index) => {
-            obj[header] = values[index];
-            return obj;
-          }, {});
-        });
-        resolve(jsonData);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsText(file);
-  });
-}
-
-// Function to extract data from DOCX files
-async function extractDocxData(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const arrayBuffer = e.target.result;
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        resolve(result.value);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// Main function to process uploaded files
-async function processFiles(files) {
-  try {
-    for (const file of files) {
-      const extension = file.name.split(".").pop().toLowerCase();
-
-      switch (extension) {
-        case "pdf":
-          const pdfText = await extractPdfData(file);
-          extractedData.pdfs.push({
-            filename: file.name,
-            content: pdfText,
-          });
-          break;
-
-        case "xlsx":
-        case "xls":
-          const excelData = await extractExcelData(file);
-          extractedData.excel.push({
-            filename: file.name,
-            content: excelData,
-          });
-          break;
-
-        case "csv":
-          const csvData = await extractCsvData(file);
-          extractedData.csv.push({
-            filename: file.name,
-            content: csvData,
-          });
-          break;
-
-        case "docx":
-          const docxText = await extractDocxData(file);
-          extractedData.docx.push({
-            filename: file.name,
-            content: docxText,
-          });
-          break;
-      }
-    }
-
-    console.log("Extracted data:", extractedData);
-    return extractedData;
-  } catch (error) {
-    console.error("Error processing files:", error);
-    throw new Error(`Failed to process files: ${error.message}`);
-  }
-}
-
-// Update file list UI
-function updateFileList(files) {
-  fileList.innerHTML = "";
-  Array.from(files).forEach(file => {
-    const li = document.createElement("li");
-    li.className = "file-item";
-    
-    const extension = file.name.split(".").pop().toLowerCase();
-    let iconClass = "bi-file-earmark";
-    switch(extension) {
-      case "pdf": iconClass = "bi-file-earmark-pdf"; break;
-      case "xlsx":
-      case "xls": iconClass = "bi-file-earmark-spreadsheet"; break;
-      case "csv": iconClass = "bi-file-earmark-text"; break;
-      case "docx": iconClass = "bi-file-earmark-word"; break;
-    }
-    
-    li.innerHTML = `
-      <i class="bi ${iconClass} file-icon text-primary"></i>
-      <span class="flex-grow-1">${file.name}</span>
-    `;
-    fileList.appendChild(li);
-  });
-}
-
-// Enable/disable chat input
-function toggleChatInput(enabled) {
-  questionInput.disabled = !enabled;
-  questionForm.querySelector("button").disabled = !enabled;
-}
-
-// Handle file upload
-fileInput.addEventListener("change", async (e) => {
-  const files = Array.from(e.target.files);
-  if (files.length > 0) {
-    fileName.textContent = `${files.length} file(s) selected`;
-    fileInfo.classList.remove("hidden");
-    updateFileList(files);
-    
-    try {
-      await processFiles(files);
-      toggleChatInput(true); // Enable chat input after files are processed
-    } catch (error) {
-      showError(error.message);
-    }
-  }
-});
-
 // Function to add a message to the chat
 function addChatMessage(message, isUser = false) {
-  const messageDiv = document.createElement("div");
-  messageDiv.className = `chat-message ${isUser ? "user-message" : "assistant-message"}`;
-  
-  const messageContent = document.createElement("div");
-  messageContent.className = "message-content";
-  messageContent.textContent = message;
-  
-  messageDiv.appendChild(messageContent);
-  chatContainer.appendChild(messageDiv);
-  
-  // Scroll to bottom
+  const div = Object.assign(document.createElement("div"), {
+    className: `chat-message ${isUser ? "user-message" : "assistant-message"}`
+  });
+  div.appendChild(Object.assign(document.createElement("div"), {
+    className: "message-content",
+    textContent: message
+  }));
+  chatContainer.appendChild(div);
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// Function to add an analysis result
 async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
-  // Add the final answer as an assistant message
   addChatMessage(finalAnswer);
-  
   if (!isFollowUp) {
-    // Clear and update expert cards only for new questions
-    expertsContainer.innerHTML = "";
-    mindmapsContainer.innerHTML = "";
-    
-    // Render expert analysis
-    expertsData.forEach((expert, idx) => {
+    expertsContainer.innerHTML = mindmapsContainer.innerHTML = "";
+    expertsData.forEach(expert => {
       const expertDiv = document.createElement("div");
       expertDiv.className = "expert-card";
       expertDiv.innerHTML = `
-        <div class="card h-100">
-          <div class="card-body">
-            <div class="d-flex align-items-center mb-3">
-              <div class="expert-avatar me-3">
-                <i class="bi bi-person-fill"></i>
-              </div>
-              <div>
-                <h5 class="card-title mb-1">${expert.title}</h5>
-                <p class="card-subtitle text-muted">${expert.specialty}</p>
-              </div>
-            </div>
-            <p class="card-text"><strong>Background:</strong> ${expert.background}</p>
-            <div class="question-section">
-              ${expert.questionsAndAnswers.map((qa, i) => `
-                <div class="mb-2">
-                  <strong>Q${i + 1}:</strong> ${qa.question}<br>
-                  <strong>A${i + 1}:</strong> ${qa.answer}
-                </div>
-              `).join('')}
-            </div>
-            <p class="mt-3"><strong>Summary:</strong> ${expert.summary}</p>
-          </div>
+        <div class="card h-100"><div class="card-body">
+        <div class="d-flex align-items-center mb-3">
+          <div class="expert-avatar me-3"><i class="bi bi-person-fill"></i></div>
+          <div><h5 class="card-title mb-1">${expert.title}</h5><p class="card-subtitle text-muted">${expert.specialty}</p></div>
         </div>
+        <p class="card-text"><strong>Background:</strong> ${expert.background}</p>
+        <div class="question-section">
+          ${expert.questionsAndAnswers.map((qa,i)=>`<div class="mb-2"><strong>Q${i+1}:</strong> ${qa.question}<br><strong>A${i+1}:</strong> ${qa.answer}</div>`).join('')}
+        </div>
+        <p class="mt-3"><strong>Summary:</strong> ${expert.summary}</p>
+        </div></div>
       `;
       expertsContainer.appendChild(expertDiv);
     });
   }
-
-  // Always update mindmaps for both new questions and follow-ups
   mindmapsContainer.innerHTML = "";
-  
-  // Filter out experts with invalid mindmaps and render only valid ones
-  const validMindmaps = expertsData.filter(expert => {
-    const isValid = expert.mermaid && expert.mermaid.trim().startsWith('mindmap');
-    if (!isValid) {
-      console.warn('Invalid mindmap for expert:', expert.title, expert.mermaid);
-    }
-    return isValid;
-  });
-  
-  console.log('Valid mindmaps:', validMindmaps.length);
-  
-  if (validMindmaps.length === 0) {
-    const noMindmapDiv = document.createElement("div");
-    noMindmapDiv.className = "alert alert-warning";
-    noMindmapDiv.innerHTML = "No valid mindmaps available for visualization.";
-    mindmapsContainer.appendChild(noMindmapDiv);
+  const validMindmaps = expertsData.filter(expert => expert.mermaid && expert.mermaid.trim().startsWith('mindmap'));
+  if (!validMindmaps.length) {
+    mindmapsContainer.appendChild(Object.assign(document.createElement("div"), { className: "alert alert-warning", innerHTML: "No valid mindmaps available for visualization." }));
   } else {
     validMindmaps.forEach((expert, idx) => {
       try {
-        const mindmapId = `mindmap-${idx}`;
         const mindmapDiv = document.createElement("div");
         mindmapDiv.className = "card mindmap-card mb-3";
-        mindmapDiv.innerHTML = `
-          <div class="card-body">
-            <h6 class="card-title mb-3">${expert.title}'s Perspective</h6>
-            <div class="mermaid" id="${mindmapId}">
-${expert.mermaid}
-            </div>
-          </div>
-        `;
+        mindmapDiv.innerHTML = `<div class="card-body"><h6 class="card-title mb-3">${expert.title}'s Perspective</h6><div class="mermaid" id="mindmap-${idx}">${expert.mermaid}</div></div>`;
         mindmapsContainer.appendChild(mindmapDiv);
-        
-        console.log(`Rendering mindmap for ${expert.title}:`, expert.mermaid);
-      } catch (error) {
-        console.error(`Error creating mindmap div for expert ${expert.title}:`, error);
-      }
+      } catch (error) { console.error(`Error creating mindmap div for expert ${expert.title}:`, error); }
     });
-
-    // Re-initialize mermaid for new diagrams with error handling
     try {
       setTimeout(() => {
-        console.log('Initializing Mermaid...');
-        mermaid.init(
-          { 
-            startOnLoad: true,
-            securityLevel: 'loose',
-            theme: 'default',
-            flowchart: {
-              useMaxWidth: false
-            }
-          },
-          '.mermaid'
-        ).then(() => {
-          console.log('Mermaid initialization successful');
-        }).catch(error => {
-          console.error('Mermaid initialization failed:', error);
-        });
+        mermaid.init({ startOnLoad: true, securityLevel: 'loose', theme: 'default', flowchart: { useMaxWidth: false } }, '.mermaid')
+          .catch(error=>console.error('Mermaid initialization failed:', error));
       }, 500);
-    } catch (error) {
-      console.error('Error in mermaid initialization:', error);
-    }
+    } catch (error) { console.error('Error in mermaid initialization:', error); }
   }
-  
-  // Generate and add follow-up questions
   const followUpQuestions = await generateFollowUpQuestions(
-    conversationHistory[conversationHistory.length - 2].content,
+    conversationHistory[conversationHistory.length-2].content,
     finalAnswer
   );
   addFollowUpQuestions(followUpQuestions);
@@ -810,84 +712,39 @@ questionForm.addEventListener("submit", async (e) => {
 // Process the question
 async function processQuestion(question, isFollowUp = false) {
   try {
-    // Add user's question to chat and history
     addChatMessage(question, true);
     addToHistory(question, null, true);
-    
-    // Show loading state
     showLoading("Processing your question...");
-    
-    let expertsData;
+    let expertsData = !isFollowUp ? [] : currentExpertsData;
     if (!isFollowUp) {
-      // Get new experts only if it's not a follow-up
       const experts = await getExperts(question);
-      expertsData = [];
-      
-      // Process each expert
       for (const [i, expert] of experts.entries()) {
-        expert.name = expert.name || `Expert ${i + 1}`;
-        const expertQuestions = await generateExpertQuestions(question, expert);
-        const expertAnswers = await getExpertAnswers(question, expert, expertQuestions);
-        const questionsAndAnswers = expertQuestions.map((q, idx) => ({
-          question: q,
-          answer: expertAnswers[idx],
-        }));
-        const summary = await generateExpertSummary(question, expert, questionsAndAnswers);
-        expertsData.push({
-          ...expert,
-          questions: expertQuestions,
-          answers: expertAnswers,
-          summary,
-          questionsAndAnswers,
-        });
+        expert.name ||= `Expert ${i + 1}`;
+        const qs = await generateExpertQuestions(question, expert);
+        const as = await getExpertAnswers(question, expert, qs);
+        const qa = qs.map((q, idx) => ({ question: q, answer: as[idx] }));
+        const summary = await generateExpertSummary(question, expert, qa);
+        expertsData.push({ ...expert, questions: qs, answers: as, summary, questionsAndAnswers: qa });
       }
-      // Store current experts for follow-ups
       currentExpertsData = expertsData;
     } else {
-      // Use existing experts for follow-up
-      expertsData = currentExpertsData;
-      
-      // Update each expert's analysis for the follow-up
       for (const expert of expertsData) {
-        const expertQuestions = await generateExpertQuestions(question, expert);
-        const expertAnswers = await getExpertAnswers(question, expert, expertQuestions);
-        const questionsAndAnswers = expertQuestions.map((q, idx) => ({
-          question: q,
-          answer: expertAnswers[idx],
-        }));
-        const summary = await generateExpertSummary(question, expert, questionsAndAnswers);
-        
-        // Add new Q&A to existing expert data
-        expert.questions = [...expert.questions, ...expertQuestions];
-        expert.answers = [...expert.answers, ...expertAnswers];
-        expert.questionsAndAnswers = [
-          ...expert.questionsAndAnswers,
-          ...questionsAndAnswers
-        ];
-        expert.summary = summary; // Update summary with latest context
+        const qs = await generateExpertQuestions(question, expert);
+        const as = await getExpertAnswers(question, expert, qs);
+        const qa = qs.map((q, idx) => ({ question: q, answer: as[idx] }));
+        expert.questions = [...expert.questions, ...qs];
+        expert.answers = [...expert.answers, ...as];
+        expert.questionsAndAnswers = [...expert.questionsAndAnswers, ...qa];
+        expert.summary = await generateExpertSummary(question, expert, expert.questionsAndAnswers);
       }
     }
-
-    // Generate final answer
     const finalAnswer = await generateFinalAnswer(question, expertsData);
-
-    // Add answer to chat and history
     addToHistory(finalAnswer, null, false);
-
-    // For each expert, generate or update mindmap
     for (const expert of expertsData) {
-      expert.mermaid = await generateExpertMindmapWithLLM(
-        question,
-        expert,
-        expert.questionsAndAnswers,
-        finalAnswer
-      );
+      expert.mermaid = await generateExpertMindmapWithLLM(question, expert, expert.questionsAndAnswers, finalAnswer);
     }
-
-    // Hide loading and show results
     hideLoading();
     await addAnalysisResult(finalAnswer, expertsData, isFollowUp);
-    
   } catch (error) {
     hideLoading();
     showError(error.message);
