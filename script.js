@@ -68,7 +68,7 @@ function showError(message) {
 async function callOpenAI(systemPrompt, userMessage) {
   try {
     const response = await fetch(
-      "API URL",
+      "",
       {
         method: "POST",
         headers: {
@@ -403,7 +403,7 @@ function fileToBase64(file) {
 async function extractPdfData(file) {
   try {
     const base64Data = await fileToBase64(file);
-    const response = await fetch("GEMINI_API_URL", {
+    const response = await fetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -592,47 +592,163 @@ function addChatMessage(message, isUser = false) {
 }
 
 async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
-  addChatMessage(finalAnswer);
+  
   if (!isFollowUp) {
     expertsContainer.innerHTML = mindmapsContainer.innerHTML = "";
-    expertsData.forEach(expert => {
+    
+    // Add thinking animation container
+    const thinkingDiv = document.createElement("div");
+    thinkingDiv.className = "thinking-animation mb-3";
+    expertsContainer.appendChild(thinkingDiv);
+
+    // Show initial thinking state
+    thinkingDiv.innerHTML = `
+      <div class="alert alert-info d-flex align-items-center">
+        <div class="spinner-grow spinner-grow-sm me-2" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <div>Analyzing question and data...</div>
+      </div>
+    `;
+
+    // Create container for expert analysis
+    const analysisDiv = document.createElement("div");
+    analysisDiv.className = "expert-analysis";
+    expertsContainer.appendChild(analysisDiv);
+
+    // Function to simulate typing effect
+    const typeText = async (element, text, speed = 10) => {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = text;
+      const textContent = tempDiv.textContent;
+      let htmlContent = '';
+      let textIndex = 0;
+      
+      // Process each character while preserving HTML tags
+      for (let i = 0; i < text.length; i++) {
+        if (text[i] === '<') {
+          // Capture entire HTML tag
+          let tag = '';
+          while (i < text.length && text[i] !== '>') {
+            tag += text[i];
+            i++;
+          }
+          tag += text[i]; // Include closing '>'
+          htmlContent += tag;
+        } else {
+          htmlContent += text[i];
+          textIndex++;
+          element.innerHTML = htmlContent;
+          // Scroll into view smoothly as text is typed
+          element.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          await new Promise(resolve => setTimeout(resolve, speed));
+        }
+      }
+    };
+
+    // Generate expert reasoning text
+    const expertReasoning = expertsData.map(expert => 
+      `Based on the complexity of your question, I've selected <strong>${expert.title}</strong> who specializes in <strong>${expert.specialty}</strong>. Their background in <strong>${expert.background}</strong> makes them particularly qualified to provide insights on this matter.`
+    ).join('\n\n');
+
+    // Add and animate expert reasoning
+    const reasoningDiv = document.createElement("div");
+    reasoningDiv.className = "chat-message system-message mb-4";
+    analysisDiv.appendChild(reasoningDiv);
+    await typeText(reasoningDiv, expertReasoning);
+
+    // Render expert cards with typing animation
+    for (const expert of expertsData) {
       const expertDiv = document.createElement("div");
-      expertDiv.className = "expert-card";
-      expertDiv.innerHTML = `
-        <div class="card h-100"><div class="card-body">
-        <div class="d-flex align-items-center mb-3">
-          <div class="expert-avatar me-3"><i class="bi bi-person-fill"></i></div>
-          <div><h5 class="card-title mb-1">${expert.title}</h5><p class="card-subtitle text-muted">${expert.specialty}</p></div>
+      expertDiv.className = "expert-card chat-message mb-4";
+      analysisDiv.appendChild(expertDiv);
+      expertDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+      // Create the expert card content with typing effect
+      const cardContent = `
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-center mb-3">
+              <div class="expert-avatar me-3"><i class="bi bi-person-fill"></i></div>
+              <div>
+                <h5 class="card-title mb-1">${expert.title}</h5>
+                <p class="card-subtitle text-muted">${expert.specialty}</p>
+              </div>
+            </div>
+            <div class="expert-content">
+              <p class="card-text"><strong>Background:</strong> ${expert.background}</p>
+              <div class="question-section">
+                ${expert.questionsAndAnswers.map((qa, i) => 
+                  `<div class="mb-2">
+                    <strong>Q${i+1}:</strong> ${qa.question}<br>
+                    <strong>A${i+1}:</strong> ${qa.answer}
+                  </div>`
+                ).join('')}
+              </div>
+              <p class="mt-3"><strong>Summary:</strong> ${expert.summary}</p>
+            </div>
+          </div>
         </div>
-        <p class="card-text"><strong>Background:</strong> ${expert.background}</p>
-        <div class="question-section">
-          ${expert.questionsAndAnswers.map((qa,i)=>`<div class="mb-2"><strong>Q${i+1}:</strong> ${qa.question}<br><strong>A${i+1}:</strong> ${qa.answer}</div>`).join('')}
-        </div>
-        <p class="mt-3"><strong>Summary:</strong> ${expert.summary}</p>
-        </div></div>
       `;
-      expertsContainer.appendChild(expertDiv);
-    });
+
+      // Type out the expert card content
+      await typeText(expertDiv, cardContent, 5);
+    }
+
+    // Add final thoughts message
+    const finalThoughtsDiv = document.createElement("div");
+    finalThoughtsDiv.className = "chat-message system-message mb-4";
+    analysisDiv.appendChild(finalThoughtsDiv);
+    finalThoughtsDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    await typeText(finalThoughtsDiv, "Now, let me present a visual representation of each expert's perspective through mindmaps...");
+    
+    // Remove thinking animation after reasoning is shown
+    thinkingDiv.remove();
   }
+  addChatMessage(finalAnswer);
   mindmapsContainer.innerHTML = "";
   const validMindmaps = expertsData.filter(expert => expert.mermaid && expert.mermaid.trim().startsWith('mindmap'));
   if (!validMindmaps.length) {
-    mindmapsContainer.appendChild(Object.assign(document.createElement("div"), { className: "alert alert-warning", innerHTML: "No valid mindmaps available for visualization." }));
+    const warningDiv = document.createElement("div");
+    warningDiv.className = "alert alert-warning";
+    warningDiv.style.opacity = "0";
+    warningDiv.style.transition = "opacity 0.5s ease";
+    warningDiv.innerHTML = "No valid mindmaps available for visualization.";
+    mindmapsContainer.appendChild(warningDiv);
+    warningDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    setTimeout(() => warningDiv.style.opacity = "1", 3000);
   } else {
     validMindmaps.forEach((expert, idx) => {
       try {
         const mindmapDiv = document.createElement("div");
         mindmapDiv.className = "card mindmap-card mb-3";
+        mindmapDiv.style.opacity = "0";
+        mindmapDiv.style.transition = "opacity 0.5s ease";
         mindmapDiv.innerHTML = `<div class="card-body"><h6 class="card-title mb-3">${expert.title}'s Perspective</h6><div class="mermaid" id="mindmap-${idx}">${expert.mermaid}</div></div>`;
         mindmapsContainer.appendChild(mindmapDiv);
-      } catch (error) { console.error(`Error creating mindmap div for expert ${expert.title}:`, error); }
+        mindmapDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        
+        // Animate mindmap entrance
+        setTimeout(() => {
+          mindmapDiv.style.opacity = "1";
+        }, 3500 + (idx * 300));
+      } catch (error) { 
+        console.error(`Error creating mindmap div for expert ${expert.title}:`, error); 
+      }
     });
     try {
       setTimeout(() => {
-        mermaid.init({ startOnLoad: true, securityLevel: 'loose', theme: 'default', flowchart: { useMaxWidth: false } }, '.mermaid')
+        mermaid.init({ 
+          startOnLoad: true, 
+          securityLevel: 'loose', 
+          theme: 'default', 
+          flowchart: { useMaxWidth: false } 
+        }, '.mermaid')
           .catch(error=>console.error('Mermaid initialization failed:', error));
-      }, 500);
-    } catch (error) { console.error('Error in mermaid initialization:', error); }
+      }, 4000);
+    } catch (error) { 
+      console.error('Error in mermaid initialization:', error); 
+    }
   }
   const followUpQuestions = await generateFollowUpQuestions(
     conversationHistory[conversationHistory.length-2].content,
