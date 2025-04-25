@@ -406,6 +406,84 @@
         top: 20px;
         z-index: 100;
       }
+
+      /* Chat input styles */
+      .chat-input-container .input-group {
+        background: #f8f9fa;
+        border-radius: 30px;
+        padding: 0.5rem;
+      }
+
+      .chat-input-container textarea {
+        border: none;
+        background: transparent;
+        padding: 0.5rem 1rem;
+      }
+
+      .chat-input-container textarea:focus {
+        box-shadow: none;
+        outline: none;
+      }
+
+      .chat-input-container .btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 8px;
+      }
+
+      .chat-input-container .btn i {
+        font-size: 1.2rem;
+      }
+
+      /* Markdown content styles */
+      .message-content {
+        line-height: 1.6;
+      }
+
+      .message-content p {
+        margin-bottom: 1rem;
+      }
+
+      .message-content ul, 
+      .message-content ol {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+      }
+
+      .message-content code {
+        background-color: #f8f9fa;
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.25rem;
+        font-size: 0.875em;
+      }
+
+      .message-content pre {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        overflow-x: auto;
+      }
+
+      .message-content blockquote {
+        border-left: 4px solid #dee2e6;
+        padding-left: 1rem;
+        margin-left: 0;
+        color: #6c757d;
+      }
+
+      .message-content h1, 
+      .message-content h2, 
+      .message-content h3, 
+      .message-content h4 {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -443,9 +521,14 @@
               <h5 class="mb-0">
                 <i class="bi bi-chat-dots-fill me-2"></i>Conversation
               </h5>
-              <button id="viewAllDataBtn" class="btn btn-outline-primary btn-sm" style="display: none;">
-                <i class="bi bi-table me-1"></i>View Data
-              </button>
+              <div class="d-flex gap-2">
+                <button id="viewAllDataBtn" class="btn btn-outline-primary btn-sm">
+                  <i class="bi bi-table me-1"></i>View Data
+                </button>
+                <button id="viewMindmapBtn" class="btn btn-outline-primary btn-sm d-none">
+                  <i class="bi bi-diagram-3 me-1"></i>View Mindmap
+                </button>
+              </div>
             </div>
 
             <!-- Loading Spinner -->

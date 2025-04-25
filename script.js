@@ -1,3 +1,5 @@
+import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
+import { unsafeHTML } from "https://cdn.jsdelivr.net/npm/lit-html@3/directives/unsafe-html.js";
 const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
 
 // DOM Elements
@@ -16,9 +18,10 @@ const fileList = document.getElementById("fileList");
 const chatContainer = document.getElementById("chatContainer");
 const followupContainer = document.getElementById("followupContainer");
 const viewAllDataBtn = document.getElementById("viewAllDataBtn");
-
+const viewMindmapBtn = document.getElementById("viewMindmapBtn");
+const marked = new Marked();
 // Global variables
-let key = "";
+let key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImtyaXNobmEua3VtYXJAZ3JhbWVuZXIuY29tIn0.QY0QNLADfGARpZvcew8DJgrtMtdxJ8NHUn9_qnSiWEM";
 let currentExpertsData = [];
 let sheetData = [];
 
@@ -68,7 +71,7 @@ function showError(message) {
 async function callOpenAI(systemPrompt, userMessage) {
   try {
     const response = await fetch(
-      "",
+      "https://llmfoundry.straive.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: {
@@ -403,7 +406,7 @@ function fileToBase64(file) {
 async function extractPdfData(file) {
   try {
     const base64Data = await fileToBase64(file);
-    const response = await fetch("", {
+    const response = await fetch("https://llmfoundry.straive.com/gemini/v1beta/models/gemini-2.0-flash:generateContent", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -564,10 +567,10 @@ async function showAllData() {
 document.getElementById('viewAllDataBtn').addEventListener('click', showAllData);
 
 // Add message to conversation history
-function addToHistory(question, answer, isUser = true) {
+function addToHistory(message, isUser = true) {
   conversationHistory.push({
     role: isUser ? "user" : "assistant",
-    content: isUser ? question : answer
+    content: message
   });
 }
 
@@ -585,7 +588,7 @@ function addChatMessage(message, isUser = false) {
   });
   div.appendChild(Object.assign(document.createElement("div"), {
     className: "message-content",
-    textContent: message
+    innerHTML: marked.parse(message)
   }));
   chatContainer.appendChild(div);
   chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -617,7 +620,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
     expertsContainer.appendChild(analysisDiv);
 
     // Function to simulate typing effect
-    const typeText = async (element, text, speed = 10) => {
+    const typeText = async (element, text, speed = 4) => {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = text;
       const textContent = tempDiv.textContent;
@@ -639,6 +642,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
           htmlContent += text[i];
           textIndex++;
           element.innerHTML = htmlContent;
+          element.style.fontSize="14px";
           // Scroll into view smoothly as text is typed
           element.scrollIntoView({ behavior: 'smooth', block: 'end' });
           await new Promise(resolve => setTimeout(resolve, speed));
@@ -692,7 +696,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
       `;
 
       // Type out the expert card content
-      await typeText(expertDiv, cardContent, 5);
+      await typeText(expertDiv, cardContent);
     }
 
     // Add final thoughts message
@@ -726,7 +730,6 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
         mindmapDiv.style.transition = "opacity 0.5s ease";
         mindmapDiv.innerHTML = `<div class="card-body"><h6 class="card-title mb-3">${expert.title}'s Perspective</h6><div class="mermaid" id="mindmap-${idx}">${expert.mermaid}</div></div>`;
         mindmapsContainer.appendChild(mindmapDiv);
-        mindmapDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
         
         // Animate mindmap entrance
         setTimeout(() => {
@@ -755,6 +758,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
     finalAnswer
   );
   addFollowUpQuestions(followUpQuestions);
+  setupMindmapButton();
 }
 
 // Generate follow-up questions based on the conversation
@@ -829,7 +833,7 @@ questionForm.addEventListener("submit", async (e) => {
 async function processQuestion(question, isFollowUp = false) {
   try {
     addChatMessage(question, true);
-    addToHistory(question, null, true);
+    addToHistory(question, true);
     showLoading("Processing your question...");
     let expertsData = !isFollowUp ? [] : currentExpertsData;
     if (!isFollowUp) {
@@ -855,7 +859,7 @@ async function processQuestion(question, isFollowUp = false) {
       }
     }
     const finalAnswer = await generateFinalAnswer(question, expertsData);
-    addToHistory(finalAnswer, null, false);
+    addToHistory(finalAnswer, false);
     for (const expert of expertsData) {
       expert.mermaid = await generateExpertMindmapWithLLM(question, expert, expert.questionsAndAnswers, finalAnswer);
     }
@@ -865,6 +869,16 @@ async function processQuestion(question, isFollowUp = false) {
     hideLoading();
     showError(error.message);
   }
+}
+
+// Function to show mindmap button and setup click handler
+function setupMindmapButton() {
+  viewMindmapBtn.classList.remove('d-none');
+  viewMindmapBtn.addEventListener('click', () => {
+    const mindmapSection = document.querySelector('.mindmap-section');
+    mindmapSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // viewMindmapBtn.href=".mindmap-section"
+  });
 }
 
 mermaid.initialize({
