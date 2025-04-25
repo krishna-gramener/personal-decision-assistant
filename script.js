@@ -21,7 +21,7 @@ const viewAllDataBtn = document.getElementById("viewAllDataBtn");
 const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const marked = new Marked();
 // Global variables
-const { token:key } = await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json());
+const { token:key } = await fetch("", { credentials: "include" }).then((r) => r.json());
 console.log(key);
 let currentExpertsData = [];
 let sheetData = [];
@@ -72,7 +72,7 @@ function showError(message) {
 async function callOpenAI(systemPrompt, userMessage) {
   try {
     const response = await fetch(
-      "https://llmfoundry.straive.com/openai/v1/chat/completions",
+      "",
       {
         method: "POST",
         headers: {
@@ -407,7 +407,7 @@ function fileToBase64(file) {
 async function extractPdfData(file) {
   try {
     const base64Data = await fileToBase64(file);
-    const response = await fetch("https://llmfoundry.straive.com/gemini/v1beta/models/gemini-2.0-flash:generateContent", {
+    const response = await fetch("", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
