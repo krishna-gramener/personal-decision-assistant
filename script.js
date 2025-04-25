@@ -21,7 +21,7 @@ const viewAllDataBtn = document.getElementById("viewAllDataBtn");
 const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const marked = new Marked();
 // Global variables
-let key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImtyaXNobmEua3VtYXJAZ3JhbWVuZXIuY29tIn0.QY0QNLADfGARpZvcew8DJgrtMtdxJ8NHUn9_qnSiWEM";
+let key = "";
 let currentExpertsData = [];
 let sheetData = [];
 
