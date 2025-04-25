@@ -21,7 +21,8 @@ const viewAllDataBtn = document.getElementById("viewAllDataBtn");
 const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const marked = new Marked();
 // Global variables
-let key = "";
+const { token:key } = await fetch("https://llmfoundry.straive.com/token", { credentials: "include" }).then((r) => r.json());
+console.log(key);
 let currentExpertsData = [];
 let sheetData = [];
 
