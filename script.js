@@ -1,5 +1,4 @@
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
-import { unsafeHTML } from "https://cdn.jsdelivr.net/npm/lit-html@3/directives/unsafe-html.js";
 const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
 
 // DOM Elements
@@ -22,7 +21,6 @@ const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const marked = new Marked();
 // Global variables
 const { token:key } = await fetch("", { credentials: "include" }).then((r) => r.json());
-console.log(key);
 let currentExpertsData = [];
 let sheetData = [];
 
@@ -465,10 +463,6 @@ async function handleFileUpload(files) {
   showLoading("Processing Files...");
   sheetData = [];
   extractedData = { pdfs: [], excel: [], csv: [], docx: [] };
-  const fileInfo = document.getElementById("fileInfo");
-  const fileName = document.getElementById("fileName");
-  const fileList = document.getElementById("fileList");
-  const viewAllDataBtn = document.getElementById("viewAllDataBtn");
   try {
     fileList.innerHTML = '';
     let hasSpreadsheetFiles = false;
@@ -515,7 +509,7 @@ async function handleFileUpload(files) {
 }
 
 // Update file input event listener
-document.getElementById("fileInput").addEventListener("change", async e => {
+fileInput.addEventListener("change", async e => {
   if (e.target.files.length) try { await handleFileUpload(e.target.files);hideLoading() } catch (err) { showError(err.message); }
 });
 
@@ -596,61 +590,52 @@ function addChatMessage(message, isUser = false) {
 }
 
 async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
+  expertsContainer.innerHTML = mindmapsContainer.innerHTML = "";
   
-  if (!isFollowUp) {
-    expertsContainer.innerHTML = mindmapsContainer.innerHTML = "";
-    
-    // Add thinking animation container
-    const thinkingDiv = document.createElement("div");
-    thinkingDiv.className = "thinking-animation mb-3";
-    expertsContainer.appendChild(thinkingDiv);
+  // Add thinking animation container
+  const thinkingDiv = document.createElement("div");
+  thinkingDiv.className = "thinking-animation";
+  thinkingDiv.innerHTML = `
+    <div class="thinking-dots">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  `;
+  expertsContainer.appendChild(thinkingDiv);
 
-    // Show initial thinking state
-    thinkingDiv.innerHTML = `
-      <div class="alert alert-info d-flex align-items-center">
-        <div class="spinner-grow spinner-grow-sm me-2" role="status">
-          <span class="visually-hidden">Loading...</span>
-        </div>
-        <div>Analyzing question and data...</div>
-      </div>
-    `;
+  // Create container for expert analysis
+  const analysisDiv = Object.assign(document.createElement('div'), { className: 'expert-analysis' });
+  expertsContainer.appendChild(analysisDiv);
 
-    // Create container for expert analysis
-    const analysisDiv = document.createElement("div");
-    analysisDiv.className = "expert-analysis";
-    expertsContainer.appendChild(analysisDiv);
-
-    // Function to simulate typing effect
-    const typeText = async (element, text, speed = 4) => {
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = text;
-      const textContent = tempDiv.textContent;
-      let htmlContent = '';
-      let textIndex = 0;
-      
-      // Process each character while preserving HTML tags
-      for (let i = 0; i < text.length; i++) {
-        if (text[i] === '<') {
-          // Capture entire HTML tag
-          let tag = '';
-          while (i < text.length && text[i] !== '>') {
-            tag += text[i];
-            i++;
-          }
-          tag += text[i]; // Include closing '>'
-          htmlContent += tag;
-        } else {
-          htmlContent += text[i];
-          textIndex++;
-          element.innerHTML = htmlContent;
-          element.style.fontSize="14px";
-          // Scroll into view smoothly as text is typed
-          element.scrollIntoView({ behavior: 'smooth', block: 'end' });
-          await new Promise(resolve => setTimeout(resolve, speed));
+  // Function to simulate typing effect
+  const typeText = async (element, text, speed = 10) => {
+    let htmlContent = '';
+    let textIndex = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '<') {
+        let tag = '<';
+        i++;
+        while (text[i] !== '>') {
+          tag += text[i];
+          i++;
         }
+        tag += text[i]; // Include closing '>'
+        htmlContent += tag;
+      } else {
+        htmlContent += text[i];
+        textIndex++;
+        element.innerHTML = htmlContent;
+        element.style.fontSize = "14px";
+        // Scroll into view smoothly as text is typed
+        element.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        await new Promise(resolve => setTimeout(resolve, speed));
       }
-    };
+    }
+  };
 
+  if (expertsData) {
+    // Expert analysis case
     // Generate expert reasoning text
     const expertReasoning = expertsData.map(expert => 
       `Based on the complexity of your question, I've selected <strong>${expert.title}</strong> who specializes in <strong>${expert.specialty}</strong>. Their background in <strong>${expert.background}</strong> makes them particularly qualified to provide insights on this matter.`
@@ -664,101 +649,96 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
 
     // Render expert cards with typing animation
     for (const expert of expertsData) {
-      const expertDiv = document.createElement("div");
-      expertDiv.className = "expert-card chat-message mb-4";
-      analysisDiv.appendChild(expertDiv);
-      expertDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      const card = document.createElement("div");
+      card.className = "expert-card mb-4";
+      analysisDiv.appendChild(card);
 
-      // Create the expert card content with typing effect
       const cardContent = `
-        <div class="card h-100">
+        <div class="card">
           <div class="card-body">
-            <div class="d-flex align-items-center mb-3">
-              <div class="expert-avatar me-3"><i class="bi bi-person-fill"></i></div>
-              <div>
-                <h5 class="card-title mb-1">${expert.title}</h5>
-                <p class="card-subtitle text-muted">${expert.specialty}</p>
-              </div>
+            <h5 class="card-title">${expert.title}</h5>
+            <h6 class="card-subtitle mb-2 text-muted">${expert.specialty}</h6>
+            <p class="card-text"><strong>Background:</strong> ${expert.background}</p>
+            <div class="qa-section">
+              ${expert.questionsAndAnswers.map(qa => `
+                <div class="qa-item mb-3">
+                  <div class="question"><strong>Q:</strong> ${qa.question}</div>
+                  <div class="answer"><strong>A:</strong> ${qa.answer}</div>
+                </div>
+              `).join('')}
             </div>
-            <div class="expert-content">
-              <p class="card-text"><strong>Background:</strong> ${expert.background}</p>
-              <div class="question-section">
-                ${expert.questionsAndAnswers.map((qa, i) => 
-                  `<div class="mb-2">
-                    <strong>Q${i+1}:</strong> ${qa.question}<br>
-                    <strong>A${i+1}:</strong> ${qa.answer}
-                  </div>`
-                ).join('')}
-              </div>
-              <p class="mt-3"><strong>Summary:</strong> ${expert.summary}</p>
-            </div>
+            <p class="expert-summary mt-3"><strong>Summary:</strong> ${expert.summary}</p>
           </div>
         </div>
       `;
-
-      // Type out the expert card content
-      await typeText(expertDiv, cardContent);
+      await typeText(card, cardContent, 5);
     }
-
-    // Add final thoughts message
-    const finalThoughtsDiv = document.createElement("div");
-    finalThoughtsDiv.className = "chat-message system-message mb-4";
-    analysisDiv.appendChild(finalThoughtsDiv);
-    finalThoughtsDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    await typeText(finalThoughtsDiv, "Now, let me present a visual representation of each expert's perspective through mindmaps...");
-    
-    // Remove thinking animation after reasoning is shown
-    thinkingDiv.remove();
-  }
-  addChatMessage(finalAnswer);
-  mindmapsContainer.innerHTML = "";
-  const validMindmaps = expertsData.filter(expert => expert.mermaid && expert.mermaid.trim().startsWith('mindmap'));
-  if (!validMindmaps.length) {
-    const warningDiv = document.createElement("div");
-    warningDiv.className = "alert alert-warning";
-    warningDiv.style.opacity = "0";
-    warningDiv.style.transition = "opacity 0.5s ease";
-    warningDiv.innerHTML = "No valid mindmaps available for visualization.";
-    mindmapsContainer.appendChild(warningDiv);
-    warningDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    setTimeout(() => warningDiv.style.opacity = "1", 3000);
   } else {
-    validMindmaps.forEach((expert, idx) => {
+    // Data analysis case
+    const analysisCard = document.createElement("div");
+    analysisCard.className = "expert-card mb-4";
+    analysisDiv.appendChild(analysisCard);
+    await typeText(analysisCard, marked.parse(finalAnswer));
+  }
+
+  // Remove thinking animation after reasoning is shown
+  thinkingDiv.remove();
+  addChatMessage(finalAnswer);
+
+  // Only show mindmaps for expert analysis
+  if (expertsData) {
+    mindmapsContainer.innerHTML = "";
+    const validMindmaps = expertsData.filter(expert => expert.mermaid && expert.mermaid.trim().startsWith('mindmap'));
+    if (!validMindmaps.length) {
+      const warningDiv = document.createElement("div");
+      warningDiv.className = "alert alert-warning";
+      warningDiv.style.opacity = "0";
+      warningDiv.style.transition = "opacity 0.5s ease";
+      warningDiv.innerHTML = "No valid mindmaps available for visualization.";
+      mindmapsContainer.appendChild(warningDiv);
+      warningDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      setTimeout(() => warningDiv.style.opacity = "1", 3000);
+    } else {
+      validMindmaps.forEach((expert, idx) => {
+        try {
+          const mindmapDiv = document.createElement("div");
+          mindmapDiv.className = "card mindmap-card mb-3";
+          mindmapDiv.style.opacity = "0";
+          mindmapDiv.style.transition = "opacity 0.5s ease";
+          mindmapDiv.innerHTML = `<div class="card-body"><h6 class="card-title mb-3">${expert.title}'s Perspective</h6><div class="mermaid" id="mindmap-${idx}">${expert.mermaid}</div></div>`;
+          mindmapsContainer.appendChild(mindmapDiv);
+          
+          // Animate mindmap entrance
+          setTimeout(() => {
+            mindmapDiv.style.opacity = "1";
+          }, 3500 + (idx * 300));
+        } catch (error) { 
+          console.error(`Error creating mindmap div for expert ${expert.title}:`, error); 
+        }
+      });
       try {
-        const mindmapDiv = document.createElement("div");
-        mindmapDiv.className = "card mindmap-card mb-3";
-        mindmapDiv.style.opacity = "0";
-        mindmapDiv.style.transition = "opacity 0.5s ease";
-        mindmapDiv.innerHTML = `<div class="card-body"><h6 class="card-title mb-3">${expert.title}'s Perspective</h6><div class="mermaid" id="mindmap-${idx}">${expert.mermaid}</div></div>`;
-        mindmapsContainer.appendChild(mindmapDiv);
-        
-        // Animate mindmap entrance
         setTimeout(() => {
-          mindmapDiv.style.opacity = "1";
-        }, 3500 + (idx * 300));
+          mermaid.init({ 
+            startOnLoad: true, 
+            securityLevel: 'loose', 
+            theme: 'default', 
+            flowchart: { useMaxWidth: false } 
+          }, '.mermaid')
+            .catch(error=>console.error('Mermaid initialization failed:', error));
+        }, 4000);
       } catch (error) { 
-        console.error(`Error creating mindmap div for expert ${expert.title}:`, error); 
+        console.error('Error in mermaid initialization:', error); 
       }
-    });
-    try {
-      setTimeout(() => {
-        mermaid.init({ 
-          startOnLoad: true, 
-          securityLevel: 'loose', 
-          theme: 'default', 
-          flowchart: { useMaxWidth: false } 
-        }, '.mermaid')
-          .catch(error=>console.error('Mermaid initialization failed:', error));
-      }, 4000);
-    } catch (error) { 
-      console.error('Error in mermaid initialization:', error); 
     }
   }
-  const followUpQuestions = await generateFollowUpQuestions(
-    conversationHistory[conversationHistory.length-2].content,
-    finalAnswer
-  );
-  addFollowUpQuestions(followUpQuestions);
+
+  if (conversationHistory.length >= 2) {
+    const followUpQuestions = await generateFollowUpQuestions(
+      conversationHistory[conversationHistory.length-2].content,
+      finalAnswer
+    );
+    addFollowUpQuestions(followUpQuestions);
+  }
   setupMindmapButton();
 }
 
@@ -836,6 +816,114 @@ async function processQuestion(question, isFollowUp = false) {
     addChatMessage(question, true);
     addToHistory(question, true);
     showLoading("Processing your question...");
+
+    // Check if we have Excel/CSV data and if analysis is needed
+    const hasExcelData = extractedData.excel.length > 0 || extractedData.csv.length > 0;
+    
+    if (hasExcelData) {
+      const needsAnalysis = await needsExcelAnalysis(question);
+      if (needsAnalysis) {
+        showLoading("Performing data analysis...");
+        const pythonCode = await generatePythonAnalysisCode(question, extractedData);
+        console.log("Python code:", pythonCode);
+        
+        // Prepare data for Pyodide
+        let analysisData;
+        if (extractedData.excel.length > 0) {
+          const workbook = extractedData.excel[0].content;
+          const firstSheet = workbook.SheetNames[0];
+          // Convert to array of objects using first row as headers
+          analysisData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], {
+            header: "A",  // Use A,B,C... as temp headers
+            raw: true,
+            blankrows: false
+          }).slice(0, 6);  // Get 6 rows to include headers + 5 data rows
+          
+          // Get column headers from first row
+          const headers = Object.values(analysisData[0]);
+          
+          // Convert remaining rows to objects with proper headers
+          analysisData = analysisData.slice(1).map(row => {
+            const obj = {};
+            Object.entries(row).forEach(([key, value], index) => {
+              obj[headers[index]] = value;
+            });
+            return obj;
+          });
+        } else {
+          // For CSV, convert to array of objects with column headers
+          const csvContent = extractedData.csv[0].content;
+          const headers = csvContent[0];
+          analysisData = csvContent.slice(1).map(row => {
+            const obj = {};
+            headers.forEach((header, index) => {
+              obj[header] = row[index];
+            });
+            return obj;
+          });
+        }
+        
+        console.log("Analysis data:", analysisData); // Add this for debugging
+        
+        // Use pyodide worker to run the analysis
+        const analysisPromise = new Promise((resolve, reject) => {
+          const id = Date.now().toString();
+          const handler = (e) => {
+            if (e.data.id === id) {
+              console.log("Python analysis completed");
+              pyodideWorker.removeEventListener('message', handler);
+              if (e.data.error) {
+                console.error("Python analysis error:", e.data.error);
+                reject(new Error(e.data.error));
+              } else {
+                resolve(e.data.result);
+              }
+            }
+          };
+          pyodideWorker.addEventListener('message', handler);
+          
+          try {
+            pyodideWorker.postMessage({
+              id,
+              code: pythonCode,
+              data: analysisData,
+              context: {}
+            });
+          } catch (err) {
+            console.error("Error posting message to worker:", err);
+            reject(err);
+          }
+        });
+        
+        try {
+          const analysisResult = await analysisPromise;
+          console.log("Analysis result:", analysisResult);
+          hideLoading();
+          
+          // Format the result for display
+          const formattedResult = `### Data Analysis Result
+
+\`\`\`python
+${pythonCode}
+\`\`\`
+
+### Analysis Output
+\`\`\`
+${JSON.stringify(analysisResult, null, 2)}
+\`\`\``;
+          
+          await addAnalysisResult(formattedResult, null, isFollowUp);
+          return;
+        } catch (error) {
+          console.error("Analysis failed:", error);
+          hideLoading();
+          addChatMessage("Sorry, there was an error analyzing the data: " + error.message, false);
+          return;
+        }
+      }
+    }
+
+    // Regular expert consultation flow if no Excel analysis needed
     let expertsData = !isFollowUp ? [] : currentExpertsData;
     if (!isFollowUp) {
       const experts = await getExperts(question);
@@ -890,3 +978,143 @@ mermaid.initialize({
     useMaxWidth: false
   }
 });
+
+// Function to check if question needs Excel analysis
+async function needsExcelAnalysis(question) {
+  const systemPrompt = `You are an assistant that determines if a question requires Excel/CSV data analysis.
+  Answer with ONLY "yes" or "no". Consider if the question involves:
+  - Data calculations
+  - Statistical analysis
+  - Data filtering or grouping
+  - Numerical comparisons
+  - Trend analysis
+  - Data aggregation`;
+
+  const userMessage = `Question: ${question}
+  Does this question require Excel/CSV data analysis? Answer only yes/no.`;
+
+  try {
+    const response = await callOpenAI(systemPrompt, userMessage);
+    return response.toLowerCase().includes('yes');
+  } catch (error) {
+    console.error("Failed to check if analysis needed:", error);
+    return false;
+  }
+}
+
+// Function to generate Python code for Excel analysis
+async function generatePythonAnalysisCode(question, data) {
+  // Get the first 5 entries of the dataset for context
+  let datasetSample;
+  if (data.excel.length > 0) {
+    const workbook = data.excel[0].content;
+    const firstSheet = workbook.SheetNames[0];
+    // Convert to array of objects using first row as headers
+    datasetSample = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], {
+      header: "A",  // Use A,B,C... as temp headers
+      raw: true,
+      blankrows: false
+    }).slice(0, 6);  // Get 6 rows to include headers + 5 data rows
+    
+    // Get column headers from first row
+    const headers = Object.values(datasetSample[0]);
+    
+    // Convert remaining rows to objects with proper headers
+    datasetSample = datasetSample.slice(1).map(row => {
+      const obj = {};
+      Object.entries(row).forEach(([key, value], index) => {
+        obj[headers[index]] = value;
+      });
+      return obj;
+    });
+  } else {
+    // For CSV, convert to array of objects with column headers
+    const csvContent = data.csv[0].content;
+    const headers = csvContent[0];
+    datasetSample = csvContent.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((header, index) => {
+        obj[header] = row[index];
+      });
+      return obj;
+    });
+  }
+  console.log(datasetSample);
+  const systemPrompt = `You are a Python code generator specialized in data analysis.
+  Generate a Python function that analyzes data using pandas and numpy.
+  The function should:
+  1. Be named 'generateAnalysis'
+  2. Take a pandas DataFrame as input parameter
+  3. Return a dictionary with analysis results (must be JSON-serializable)
+  4. Include type hints for parameters and return type
+  5. Include clear docstring and comments
+  6. Include proper error handling inside the function
+  
+  Function template to follow:
+  \`\`\`python
+  import pandas as pd
+  import numpy as np
+  import scipy.stats as stats
+  
+  def generateAnalysis(df: pd.DataFrame) -> dict:
+      """
+      Analyze the provided DataFrame based on the question.
+      
+      Args:
+          df (pd.DataFrame): Input DataFrame containing the data
+          
+      Returns:
+          dict: Analysis results as a JSON-serializable dictionary
+              All numpy/pandas numeric types must be converted to Python native types
+              Example: {'mean': float(df['column'].mean()), 'count': int(len(df))}
+      """
+      try:
+          # Your analysis code here
+          result = {}  # Dictionary with native Python types
+          return result
+      except Exception as e:
+          return {"error": str(e)}
+  \`\`\`
+  
+  Here is the dataset structure (first few rows for context):
+  ${JSON.stringify(datasetSample, null, 2)}`;
+
+  const userMessage = `Question: ${question}
+  Generate the generateAnalysis function to analyze this data.
+  IMPORTANT:
+  1. Follow the exact function template
+  2. Convert all numpy/pandas numeric types to native Python types using float(), int()
+  3. Return only JSON-serializable values in the dictionary
+  4. Handle all errors inside the function
+  5. No need to call the function, just define it`;
+
+  try {
+    const response = await callOpenAI(systemPrompt, userMessage);
+    // Extract code from markdown code block if present
+    const codeMatch = response.match(/```python\n([\s\S]*?)```/);
+    let pythonCode = codeMatch ? codeMatch[1].trim() : response.trim();
+    
+    // Ensure all required imports are present
+    const requiredImports = [
+      'import pandas as pd',
+      'import numpy as np',
+      'import scipy.stats as stats'
+    ];
+    
+    // Check if imports are present, add missing ones at the top
+
+    const missingImports = requiredImports.filter(imp => !pythonCode.includes(imp));
+    
+    if (missingImports.length > 0) {
+      pythonCode = missingImports.join('\n') + '\n\n' + pythonCode;
+    }
+    
+    // Add the function call at the end
+    pythonCode += '\n\n# Execute analysis\ngenerateAnalysis(pd.DataFrame(data))';
+    
+    return pythonCode;
+  } catch (error) {
+    console.error("Failed to generate Python code:", error);
+    throw error;
+  }
+}
