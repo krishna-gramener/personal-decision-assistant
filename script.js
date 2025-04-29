@@ -20,7 +20,6 @@ const viewAllDataBtn = document.getElementById("viewAllDataBtn");
 const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const downloadCsvBtn = document.getElementById("downloadCsv");
 const downloadXlsxBtn = document.getElementById("downloadXlsx");
-const analysisResultTable = document.getElementById("analysisResultTable");
 let currentAnalysisData = null;
 
 // Global variables
@@ -1347,17 +1346,19 @@ mermaid.initialize({
 
 // Function to check if question needs Excel analysis
 async function needsExcelAnalysis(question) {
-  const systemPrompt = `You are an assistant that determines if a question requires Excel/CSV data analysis.
-  Answer with ONLY "yes" or "no". Consider if the question involves:
-  - Data calculations
-  - Statistical analysis
-  - Data filtering or grouping
-  - Numerical comparisons
-  - Trend analysis
-  - Data aggregation`;
+  const systemPrompt = `You are an assistant that determines if a question requires Excel/CSV data operations.
+  Answer with ONLY "yes" or "no". 
+  
+  Answer "yes" if the question involves ANY of:
+  - Data extraction 
+  - Data filtering 
+  - Data grouping 
+  - Data calculations 
+
+  Otherwise, answer "no".`;
 
   const userMessage = `Question: ${question}
-  Does this question require Excel/CSV data analysis? Answer only yes/no.`;
+  Does this question require Excel/CSV data operations? Answer only yes/no.`;
 
   try {
     const response = await callOpenAI(systemPrompt, userMessage);
@@ -1371,12 +1372,12 @@ async function needsExcelAnalysis(question) {
 // Function to generate Python code for Excel analysis
 async function generatePythonAnalysisCode(question, data) {
   const systemPrompt = `You are a Python code generator specialized in data extraction from Excel/CSV files.
-  Generate a Python function that extracts and filters data using pandas.
+  Generate a Python function that extracts data using pandas.
   
   CRITICAL: The function must:
   1. Extract specific rows/data based on the question
   2. Return results in a FLAT dictionary where:
-     - Keys are descriptive of what was extracted or same as column names provided as reference
+     - Keys are same as column names provided as reference or descriptive of what was extracted
      - Values can be the actual data (numbers or strings)
      - NO nested structures or arrays
     
