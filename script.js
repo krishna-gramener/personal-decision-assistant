@@ -10,7 +10,6 @@ const loadingMessage = document.getElementById("loadingMessage");
 const errorAlert = document.getElementById("errorAlert");
 const errorMessage = document.getElementById("errorMessage");
 const expertsContainer = document.getElementById("expertsContainer");
-const mindmapsContainer = document.getElementById("mindmapsContainer");
 const fileInput = document.getElementById("fileInput");
 const fileInfo = document.getElementById("fileInfo");
 const fileName = document.getElementById("fileName");
@@ -725,7 +724,7 @@ function addChatMessage(message, isUser = false) {
 }
 
 async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
-  expertsContainer.innerHTML = mindmapsContainer.innerHTML = "";
+  expertsContainer.innerHTML =  "";
 
   // Add thinking animation container
   const thinkingDiv = document.createElement("div");
@@ -746,7 +745,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
   expertsContainer.appendChild(analysisDiv);
 
   // Function to simulate typing effect
-  const typeText = async (element, text, speed = 10) => {
+  const typeText = async (element, text, speed = 0) => {
     let htmlContent = "";
     let textIndex = 0;
     for (let i = 0; i < text.length; i++) {
@@ -813,10 +812,99 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
             <p class="expert-summary mt-3"><strong>Summary:</strong> ${
               expert.summary
             }</p>
+            ${expert.mermaid ? `
+              <div class="mindmap-section mt-4">
+                <h6 class="text-primary mb-3">
+                  <i class="bi bi-diagram-3 me-2"></i>Analysis Mindmap
+                </h6>
+                <div class="mindmap-container" style="width: 100%; max-height: 400px; overflow: auto;">
+                  <div class="mindmap" style="min-width: fit-content;"></div>
+                </div>
+              </div>
+            ` : ''}
           </div>
         </div>
       `;
-      await typeText(card, cardContent, 5);
+      await typeText(card, cardContent, 0);
+
+      // Initialize mindmap if expert has one
+      if (expert.mermaid) {
+        const mindmapContainer = card.querySelector('.mindmap');
+        try {
+          mindmapContainer.innerHTML = expert.mermaid;
+          await mermaid.init(undefined, mindmapContainer);
+          
+          // Make SVG responsive in card
+          const svg = mindmapContainer.querySelector('svg');
+          if (svg) {
+            svg.style.width = '100%';
+            svg.style.height = 'auto';
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          }
+
+          // Setup click handler for mindmap section
+          const mindmapSection = card.querySelector('.mindmap-section');
+          mindmapSection.style.cursor = 'pointer';
+          mindmapSection.onclick = async () => {
+            // Create modal dynamically
+            const modalHtml = `
+              <div class="modal fade" tabindex="-1">
+                <div class="modal-dialog modal-xl modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title">
+                        <i class="bi bi-diagram-3 me-2"></i>${expert.title}'s Analysis Mindmap
+                      </h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                      <div class="mindmap-modal" style="min-height: 70vh; overflow: auto;"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+
+            const modalWrapper = document.createElement('div');
+            modalWrapper.innerHTML = modalHtml;
+            const modalElement = modalWrapper.firstElementChild;
+            document.body.appendChild(modalElement);
+
+            const modal = new bootstrap.Modal(modalElement);
+            
+            try {
+              const modalMindmap = modalElement.querySelector('.mindmap-modal');
+              const { svg } = await mermaid.render(`modal-mindmap-${Date.now()}`, expert.mermaid);
+              modalMindmap.innerHTML = svg;
+              
+              const modalSvg = modalMindmap.querySelector('svg');
+              if (modalSvg) {
+                modalSvg.style.width = '100%';
+                modalSvg.style.height = 'auto';
+                modalSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+              }
+              
+              modal.show();
+
+              modalElement.addEventListener('hidden.bs.modal', () => {
+                modal.dispose();
+                modalElement.remove();
+              });
+            } catch (error) {
+              console.error('Failed to render modal mindmap:', error);
+              modalElement.remove();
+              alert('Failed to render mindmap in modal: ' + error.message);
+            }
+          };
+        } catch (error) {
+          console.error(`Failed to render mindmap for ${expert.title}:`, error);
+          mindmapContainer.innerHTML = `
+            <div class="alert alert-danger d-flex align-items-center">
+              <i class="bi bi-exclamation-triangle-fill me-2"></i>
+              Failed to render mindmap: ${error.message}
+            </div>`;
+        }
+      }
     }
     addChatMessage(finalAnswer);
 
@@ -924,7 +1012,7 @@ function addFollowUpQuestions(questions) {
     button.className = "btn btn-outline-primary text-start";
     button.textContent = question;
     button.onclick = () => {
-      questionInput.value = question;
+      questionInput.value = '';
       processQuestion(question, true);
     };
     list.appendChild(button);
@@ -1117,7 +1205,6 @@ function setupMindmapButton() {
   viewMindmapBtn.addEventListener("click", () => {
     const mindmapSection = document.querySelector(".mindmap-section");
     mindmapSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    // viewMindmapBtn.href=".mindmap-section"
   });
 }
 
@@ -1125,9 +1212,15 @@ mermaid.initialize({
   startOnLoad: false,
   theme: "default",
   securityLevel: "loose",
-  flowchart: {
-    useMaxWidth: false,
+  mindmap: {
+    padding: 10,
+    useMaxWidth: true
   },
+  flowchart: {
+    useMaxWidth: true,
+    htmlLabels: true,
+    curve: 'basis'
+  }
 });
 
 // Function to check if question needs Excel analysis
