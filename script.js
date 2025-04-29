@@ -18,6 +18,10 @@ const chatContainer = document.getElementById("chatContainer");
 const followupContainer = document.getElementById("followupContainer");
 const viewAllDataBtn = document.getElementById("viewAllDataBtn");
 const viewMindmapBtn = document.getElementById("viewMindmapBtn");
+const downloadCsvBtn = document.getElementById("downloadCsv");
+const downloadXlsxBtn = document.getElementById("downloadXlsx");
+const analysisResultTable = document.getElementById("analysisResultTable");
+let currentAnalysisData = null;
 
 // Global variables
 const token_url = "";
@@ -620,72 +624,148 @@ fileInput.addEventListener("change", async (e) => {
 
 // Function to show all data in modal
 async function showAllData() {
-  const container = document.getElementById("dataTablesContainer");
-  container.innerHTML = "";
-  // Group sheets by file name
-  const fileGroups = {};
-  sheetData.forEach((sheet) => {
-    (fileGroups[sheet.fileName] ||= []).push(sheet);
-  });
-  // Create sections for each file and sheet
-  Object.entries(fileGroups).forEach(([fileName, sheets]) => {
-    const fileSection = Object.assign(document.createElement("div"), {
-      className: "table-section",
+  const table = document.getElementById("analysisResultTable");
+  const thead = table.querySelector('thead');
+  const tbody = table.querySelector('tbody');
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+
+  if (currentAnalysisData && Array.isArray(currentAnalysisData) && currentAnalysisData.length > 0) {
+    // Show analysis results
+    displayAnalysisTable(currentAnalysisData);
+  } else if (sheetData.length > 0) {
+    // Show uploaded Excel/CSV data
+    displayUploadedData();
+  } else {
+    tbody.innerHTML = '<tr><td colspan="100%" class="text-center">No data available</td></tr>';
+    
+    // Disable download buttons
+    const downloadCsvBtn = document.getElementById('downloadCsv');
+    const downloadXlsxBtn = document.getElementById('downloadXlsx');
+    if (downloadCsvBtn && downloadXlsxBtn) {
+      downloadCsvBtn.disabled = true;
+      downloadXlsxBtn.disabled = true;
+    }
+  }
+
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('dataTablesModal'));
+  modal.show();
+}
+
+// Function to display uploaded Excel/CSV data
+function displayUploadedData() {
+  const table = document.getElementById("analysisResultTable");
+  const tbody = table.querySelector('tbody');
+
+  sheetData.forEach((sheet, sheetIndex) => {
+    // Add file header
+    const fileHeaderRow = document.createElement('tr');
+    const fileHeaderCell = document.createElement('th');
+    fileHeaderCell.colSpan = 100;
+    fileHeaderCell.className = 'bg-light';
+    fileHeaderCell.style.padding = '10px';
+    fileHeaderCell.innerHTML = `<i class="bi bi-file-earmark-spreadsheet me-2"></i>${sheet.fileName} - ${sheet.sheetName}`;
+    fileHeaderRow.appendChild(fileHeaderCell);
+    tbody.appendChild(fileHeaderRow);
+
+    // Add data headers
+    if (sheet.data.length > 0) {
+      const headerRow = document.createElement('tr');
+      sheet.data[0].forEach(header => {
+        const th = document.createElement('th');
+        th.textContent = header || '';
+        th.style.padding = '10px';
+        th.style.fontWeight = 'bold';
+        headerRow.appendChild(th);
+      });
+      tbody.appendChild(headerRow);
+    }
+
+    // Add data rows
+    sheet.data.slice(1).forEach(row => {
+      const tr = document.createElement('tr');
+      row.forEach(cell => {
+        const td = document.createElement('td');
+        td.textContent = cell || '';
+        td.style.padding = '8px';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
     });
-    fileSection.appendChild(
-      Object.assign(document.createElement("h5"), { textContent: fileName })
-    );
-    sheets.forEach((sheet) => {
-      const sheetSection = Object.assign(document.createElement("div"), {
-        className: "mb-4",
-      });
-      sheetSection.appendChild(
-        Object.assign(document.createElement("h6"), {
-          className: "mb-3",
-          textContent: sheet.sheetName,
-        })
-      );
-      const table = Object.assign(document.createElement("table"), {
-        className: "table table-striped table-bordered",
-      });
-      // Header
-      if (sheet.data.length > 0) {
-        const thead = document.createElement("thead");
-        const headerRow = document.createElement("tr");
-        sheet.data[0].forEach((header) => {
-          headerRow.appendChild(
-            Object.assign(document.createElement("th"), {
-              textContent: header || "",
-            })
-          );
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-      }
-      // Body
-      const tbody = document.createElement("tbody");
-      sheet.data.slice(1).forEach((row) => {
-        const tr = document.createElement("tr");
-        row.forEach((cell) =>
-          tr.appendChild(
-            Object.assign(document.createElement("td"), {
-              textContent: cell || "",
-            })
-          )
-        );
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      const tableWrapper = Object.assign(document.createElement("div"), {
-        className: "table-responsive",
-      });
-      tableWrapper.appendChild(table);
-      sheetSection.appendChild(tableWrapper);
-      fileSection.appendChild(sheetSection);
-    });
-    container.appendChild(fileSection);
+
+    // Add spacing between sheets
+    if (sheetIndex < sheetData.length - 1) {
+      const spacerRow = document.createElement('tr');
+      const spacerCell = document.createElement('td');
+      spacerCell.colSpan = 100;
+      spacerCell.style.height = '20px';
+      spacerRow.appendChild(spacerCell);
+      tbody.appendChild(spacerRow);
+    }
   });
-  new bootstrap.Modal(document.getElementById("dataTablesModal")).show();
+
+  // Disable download buttons for uploaded data view
+  const downloadCsvBtn = document.getElementById('downloadCsv');
+  const downloadXlsxBtn = document.getElementById('downloadXlsx');
+  if (downloadCsvBtn && downloadXlsxBtn) {
+    downloadCsvBtn.disabled = true;
+    downloadXlsxBtn.disabled = true;
+  }
+}
+
+// Function to display data in table
+function displayAnalysisTable(data) {
+  if (!data || !Array.isArray(data)) return;
+  
+  const table = document.getElementById("analysisResultTable");
+  const tbody = table.querySelector('tbody');
+
+  // Add analysis header
+  const analysisHeaderRow = document.createElement('tr');
+  const analysisHeaderCell = document.createElement('th');
+  analysisHeaderCell.colSpan = 100;
+  analysisHeaderCell.className = 'bg-primary text-white';
+  analysisHeaderCell.style.padding = '10px';
+  analysisHeaderCell.innerHTML = '<i class="bi bi-table me-2"></i>Analysis Results';
+  analysisHeaderRow.appendChild(analysisHeaderCell);
+  tbody.appendChild(analysisHeaderRow);
+
+  // Create headers
+  const headers = Object.keys(data[0]);
+  const headerRow = document.createElement('tr');
+  headers.forEach(header => {
+    const th = document.createElement('th');
+    th.textContent = header;
+    th.style.padding = '10px';
+    th.style.fontWeight = 'bold';
+    headerRow.appendChild(th);
+  });
+  tbody.appendChild(headerRow);
+
+  // Create rows
+  data.forEach(row => {
+    const tr = document.createElement('tr');
+    headers.forEach(header => {
+      const td = document.createElement('td');
+      const value = row[header];
+      td.textContent = value !== null && value !== undefined ? value.toString() : '';
+      td.style.padding = '8px';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  // Store data for downloads
+  currentAnalysisData = data;
+  
+  // Enable download buttons
+  const downloadCsvBtn = document.getElementById('downloadCsv');
+  const downloadXlsxBtn = document.getElementById('downloadXlsx');
+  if (downloadCsvBtn && downloadXlsxBtn) {
+    downloadCsvBtn.disabled = false;
+    downloadXlsxBtn.disabled = false;
+  }
 }
 
 // Add event listener for view all data button
@@ -1083,7 +1163,9 @@ ${JSON.stringify(sheet.data.slice(0, 5), null, 2)}
             Sheet1: csvContent
               .slice(1)
               .map((row) =>
-                Object.fromEntries(headers.map((header, i) => [header, row[i]]))
+                Object.fromEntries(
+                  headers.map((header, i) => [header, row[i]])
+                )
               ),
           };
           sheetInfo = `CSV Data:
@@ -1117,24 +1199,64 @@ ${JSON.stringify(analysisData.Sheet1.slice(0, 5), null, 2)}`;
           });
 
           showLoading("Formatting analysis results...");
+          console.log(analysisResult)
+          // Convert pandas DataFrame result to proper format
+          let tableData = null;
+          if (analysisResult && typeof analysisResult === 'object') {
+            if (analysisResult.values && analysisResult.columns) {
+              // Handle pandas DataFrame format
+              tableData = analysisResult.values.map(row => 
+                Object.fromEntries(analysisResult.columns.map((col, i) => [col, row[i]]))
+              );
+            } else if (Array.isArray(analysisResult)) {
+              // Handle array of objects
+              tableData = analysisResult;
+            } else {
+              // Handle object with array values
+              const arrayData = Object.values(analysisResult).find(value => Array.isArray(value));
+              if (arrayData) {
+                if (arrayData[0] && typeof arrayData[0] === 'object') {
+                  // Array of objects
+                  tableData = arrayData;
+                } else if (Object.keys(analysisResult)[0]) {
+                  // Convert array of arrays to array of objects
+                  const headers = Object.keys(analysisResult)[0].split(',');
+                  tableData = arrayData.map(row => 
+                    Object.fromEntries(headers.map((header, i) => [header.trim(), row[i]]))
+                  );
+                }
+              } else {
+                // Try to convert the entire result to array of objects
+                if (typeof analysisResult === 'object' && !Array.isArray(analysisResult)) {
+                  tableData = [analysisResult];
+                }
+              }
+            }
+          }
 
-          // Format the results using LLM
-          const formattedAnalysis = await formatAnalysisResult(
-            analysisResult,
-            question
-          );
+          // Store the properly formatted data for download
+          if (tableData && Array.isArray(tableData) && tableData.length > 0) {
+            currentAnalysisData = tableData;
+            // Format the results using LLM
+            const formattedAnalysis = await formatAnalysisResult(
+              analysisResult,
+              question
+            );
 
-          const formattedResult = `
+            const formattedResult = `
 \`\`\`python
 ${pythonCode}
 \`\`\`
 
 ${formattedAnalysis}`;
 
-          addToHistory(formattedAnalysis, false);
-          await addAnalysisResult(formattedResult, null, isFollowUp);
+            addToHistory(formattedAnalysis, false);
+            await addAnalysisResult(formattedResult, null, isFollowUp);
+          } else {
+            currentAnalysisData = null;
+          }
+          
           hideLoading();
-          //follow up need to be added here
           return;
         } catch (error) {
           console.error("Analysis failed:", error);
@@ -1248,44 +1370,48 @@ async function needsExcelAnalysis(question) {
 
 // Function to generate Python code for Excel analysis
 async function generatePythonAnalysisCode(question, data) {
-  const systemPrompt = `You are a Python code generator specialized in data analysis.
-  Generate a Python function that analyzes data using pandas and numpy.
-  The function should:
-  1. Be named 'generateAnalysis'
-  2. Take a dictionary of pandas DataFrames as input parameter, where each key is a sheet name
-  3. Return a dictionary with analysis results (must be JSON-serializable)
-  4. Include type hints for parameters and return type
-  5. Include clear docstring and comments
-  6. Include proper error handling inside the function
-  7. Make sure to handle NAN/NA Values properly
-  Function template to follow:
+  const systemPrompt = `You are a Python code generator specialized in data extraction from Excel/CSV files.
+  Generate a Python function that extracts and filters data using pandas.
+  
+  CRITICAL: The function must:
+  1. Extract specific rows/data based on the question
+  2. Return results in a FLAT dictionary where:
+     - Keys are descriptive of what was extracted or same as column names provided as reference
+     - Values can be the actual data (numbers or strings)
+     - NO nested structures or arrays
+    
+
+  Function requirements:
+  1. Name: generateAnalysis
+  2. Input: Dictionary of pandas DataFrames
+  3. Use pandas operations 
+  4. Handle missing data and errors
+
+  Function template:
   \`\`\`python
   import pandas as pd
   import numpy as np
-  import scipy.stats as stats
   from typing import Dict
   
   def generateAnalysis(dfs: Dict[str, pd.DataFrame]) -> dict:
       """
-      Analyze the provided DataFrames based on the question.
+      Extract and filter data from DataFrames based on the question.
+      Returns results as a flat dictionary.
       
       Args:
-          dfs (Dict[str, pd.DataFrame]): Dictionary of DataFrames, where key is sheet name
+          dfs: Dictionary of pandas DataFrames
           
       Returns:
-          dict: Analysis results as a JSON-serializable dictionary
-              All numpy/pandas numeric types must be converted to Python native types
-              Example: {'sheet1_mean': float(dfs['Sheet1']['column'].mean())}
+          dict: Extracted data as {key: value} pairs
       """
       try:
-          # Your analysis code here
-          result = {}  # Dictionary with native Python types
+          result = {}  # Will contain extracted data
           return result
       except Exception as e:
-          return {"error": str(e)}
+          return {"error": "1"}
   \`\`\`
   
-  Here is the dataset structure:
+  Dataset structure:
   ${data.sheetInfo}`;
 
   const userMessage = `Question: ${question}
@@ -1306,7 +1432,6 @@ async function generatePythonAnalysisCode(question, data) {
     const requiredImports = [
       "import pandas as pd",
       "import numpy as np",
-      "import scipy.stats as stats",
       "from typing import Dict",
     ];
 
@@ -1402,3 +1527,38 @@ Please format these results in a clear markdown format that directly addresses t
     )}`;
   }
 }
+
+// Function to download as CSV
+function downloadCsv() {
+  if (!currentAnalysisData) return;
+  
+  const headers = Object.keys(currentAnalysisData[0]);
+  const csvContent = [
+    headers.join(','),
+    ...currentAnalysisData.map(row => 
+      headers.map(header => 
+        JSON.stringify(row[header] || '')
+      ).join(',')
+    )
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'analysis_result.csv';
+  link.click();
+}
+
+// Function to download as XLSX
+function downloadXlsx() {
+  if (!currentAnalysisData) return;
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(currentAnalysisData);
+  XLSX.utils.book_append_sheet(wb, ws, 'Analysis Result');
+  XLSX.writeFile(wb, 'analysis_result.xlsx');
+}
+
+// Add event listeners for download buttons
+downloadCsvBtn.addEventListener('click', downloadCsv);
+downloadXlsxBtn.addEventListener('click', downloadXlsx);
