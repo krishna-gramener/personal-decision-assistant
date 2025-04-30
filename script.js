@@ -23,15 +23,20 @@ const downloadXlsxBtn = document.getElementById("downloadXlsx");
 const container = document.getElementById('jsmind_container');
 let currentAnalysisData = null;
 let currentQuestion = null;
+let key=null;
+init();
+async function init(){
+  const token_url = "https://llmfoundry.straive.com/token";
+  const { token } = await fetch(token_url, { credentials: "include" }).then(
+    (r) => r.json()
+  );
+  key=token;
+}
 
-// Global variables
-const token_url = "https://llmfoundry.straive.com/token";
-const openai_url = "https://llmfoundry.straive.com/openai/v1/chat/completions";
+const openai_url = "https://llmfoundry.straive.com/azure/openai/deployments/gpt-4.1-nano/chat/completions?api-version=2025-01-01-preview";
 const gemini_url =
   "https://llmfoundry.straive.com/gemini/v1beta/models/gemini-2.0-flash:generateContent";
-const { token: key } = await fetch(token_url, { credentials: "include" }).then(
-  (r) => r.json()
-);
+
 let currentExpertsData = [];
 let sheetData = [];
 
@@ -88,7 +93,6 @@ async function callOpenAI(systemPrompt, userMessage) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4.1-nano",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
@@ -114,6 +118,7 @@ let currentFinalmapData = null;
 async function generateFinalmapData(question, expertsData) {
   const systemPrompt = `You are an expert at creating cumulative mindmaps. Given a question and multiple experts' analyses, 
   create a hierarchical mindmap structure that combines insights from all experts. The structure should be in jsMind format.
+  Direction should always be right.
 
   Return a JSON object in this exact format:
   {
@@ -156,7 +161,8 @@ Make sure to:
 1. Set the root topic as the main question
 2. Group insights by common themes
 3. Label each insight with the expert's name
-4. Keep topics concise but informative`;
+4. Keep topics concise but informative
+5. Direction should always be right`;
 
   try {
     const response = await callOpenAI(systemPrompt, userMessage);
@@ -785,6 +791,7 @@ async function handleFileUpload(files) {
     fileName.textContent = `${files.length} file(s) uploaded successfully`;
     document.getElementById("questionInput").disabled = false;
     document.querySelector("#questionForm button").disabled = false;
+    await generateInitialInsights();
     return extractedData;
   } catch (error) {
     console.error("Error processing files:", error);
@@ -1096,7 +1103,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
             </div>
           </div>
         `;
-        await typeText(card, cardContent, 0);
+        await typeText(card, cardContent);
 
         // Initialize mindmap if expert has one
         if (expert.mermaid) {
@@ -1824,3 +1831,96 @@ container.addEventListener('dblclick', handleContainerClick);
 // Add event listeners for download buttons
 downloadCsvBtn.addEventListener('click', downloadCsv);
 downloadXlsxBtn.addEventListener('click', downloadXlsx);
+
+// Make processQuestion globally accessible
+window.processQuestion = async (question) => {
+  try {
+    const questionInput = document.getElementById("questionInput");
+    questionInput.value = '';
+    
+    // Clear any previous error states
+    questionInput.classList.remove('is-invalid');
+    
+    // Disable input and show loading state
+    questionInput.disabled = true;
+    showLoading("Processing your question...");
+    
+    await processQuestion(question, false);
+  } catch (error) {
+    console.error('Error processing question:', error);
+    showError('Failed to process question');
+  } finally {
+    // Re-enable input
+    questionInput.disabled = false;
+    hideLoading();
+  }
+};
+
+// Function to generate initial summary and questions
+async function generateInitialInsights() {
+  const systemPrompt = `
+    You are assisting a Clinical Development Director in analyzing uploaded documents.
+    Based on the provided documents, create:
+    1. A brief summary of the uploaded files
+    2. 3 relevant questions that would help analyze the data from a clinical development perspective
+    
+    Focus on aspects like:
+    - Clinical trial data and outcomes
+    - Safety and efficacy metrics
+    - Patient demographics and subgroups
+    - Protocol compliance
+    - Statistical significance
+    
+    Return in this JSON format:
+    {
+      "summary": "Brief summary of the documents",
+      "questions": [
+        "Question 1?",
+        "Question 2?",
+        "Question 3?"
+      ]
+    }`;
+
+  const documentContext = `
+    Available document content:
+    ${extractedData.pdfs.map(pdf => `PDF: ${pdf.filename}\nContent: ${pdf.content}`).join('\n\n')}
+    ${extractedData.excel.map(excel => `Excel: ${excel.filename}\nContent: ${JSON.stringify(excel.content)}`).join('\n\n')}
+    ${extractedData.csv.map(csv => `CSV: ${csv.filename}\nContent: ${JSON.stringify(csv.content)}`).join('\n\n')}
+    ${extractedData.docx.map(docx => `DOCX: ${docx.filename}\nContent: ${docx.content}`).join('\n\n')}
+  `;
+
+  try {
+    const response = await callOpenAI(systemPrompt, documentContext);
+    const result = JSON.parse(response);
+    
+    // Create and append the insight card to chat container
+    const card = document.createElement('div');
+    card.className = 'chat-message system-message mb-3';
+    
+    const content = `
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Document Analysis Summary</h5>
+          <p class="card-text">${result.summary}</p>
+          <h6 class="card-subtitle mb-2 mt-3">Suggested Questions:</h6>
+          <div class="suggested-questions">
+            ${result.questions.map(q => `
+              <div class="suggested-question mb-2">
+                <a href="#" class="text-primary" onclick="window.processQuestion('${q.replace(/'/g, "\\'")}'); return false;">
+                  <i class="bi bi-question-circle me-2"></i>${q}
+                </a>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    card.innerHTML = content;
+    chatContainer.appendChild(card);
+    
+  } catch (error) {
+    console.error('Failed to generate initial insights:', error);
+    showError('Failed to analyze uploaded documents');
+  }
+}
