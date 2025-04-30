@@ -1,8 +1,7 @@
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
 const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
 const marked = new Marked();
-// Import jsMind from global scope since it's loaded via script tag
-// const { jsMind } = window;
+
 // DOM Elements
 const questionForm = document.getElementById("questionForm");
 const questionInput = document.getElementById("questionInput");
@@ -21,7 +20,9 @@ const viewAllDataBtn = document.getElementById("viewAllDataBtn");
 const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const downloadCsvBtn = document.getElementById("downloadCsv");
 const downloadXlsxBtn = document.getElementById("downloadXlsx");
+const container = document.getElementById('jsmind_container');
 let currentAnalysisData = null;
+let currentQuestion = null;
 
 // Global variables
 const token_url = "";
@@ -171,7 +172,6 @@ Make sure to:
 // Function to render mindmap using jsMind
 function renderFinalmap(mindmapData) {
   // Clear existing content
-  const container = document.getElementById('jsmind_container');
   container.innerHTML = '';
 
   // Initialize jsMind options
@@ -1243,6 +1243,7 @@ function addFollowUpQuestions(questions) {
     const button = document.createElement("button");
     button.className = "btn btn-outline-primary text-start";
     button.textContent = question;
+    currentQuestion = question;
     button.onclick = () => {
       questionInput.value = '';
       processQuestion(question, true);
@@ -1259,6 +1260,7 @@ questionForm.addEventListener("submit", async (e) => {
   const question = questionInput.value.trim();
   questionInput.value = "";
   if (!question) return;
+  currentQuestion = question;
   processQuestion(question, false); // Pass false to indicate it's a new question
 });
 
@@ -1702,6 +1704,59 @@ function downloadXlsx() {
   XLSX.utils.book_append_sheet(wb, ws, 'Analysis Result');
   XLSX.writeFile(wb, 'analysis_result.xlsx');
 }
+
+// Generate a related question based on node text and original question
+async function generateRelatedQuestion(nodeText, originalQuestion) {
+  const systemPrompt = `You are an expert at generating insightful follow-up questions.
+Given a node text from a mindmap and the original question that generated it, create ONE specific follow-up question that:
+1. Explores the topic of the node text in more detail
+2. Relates back to the original question's context
+3. Is clear, concise, and focused
+4. Helps gain deeper insights
+
+Return ONLY the question as a plain string, no JSON or other formatting.`;
+
+  const userMessage = `Original Question: "${originalQuestion}"
+Node Text: "${nodeText}"
+
+Generate a follow-up question that explores this specific aspect in more detail.`;
+
+  try {
+    const question = await callOpenAI(systemPrompt, userMessage);
+    return question.trim();
+  } catch (error) {
+    console.error('Error generating related question:', error);
+    throw new Error('Failed to generate a related question');
+  }
+}
+
+function handleContainerClick(e) {
+  if (e.target.tagName === 'JMNODE') {
+    const nodeText = e.target.textContent;
+
+    if(!nodeText) {
+      console.error('No node text available');
+      return;
+    }
+
+    if (!currentQuestion) {
+      showError('No current question context available');
+      return;
+    }
+
+    generateRelatedQuestion(nodeText, currentQuestion)
+      .then(question => {
+        if (question) {
+          processQuestion(question, false);
+        }
+      })
+      .catch(error => {
+        showError(error.message);
+      });
+  }
+}
+
+container.addEventListener('dblclick', handleContainerClick);
 
 // Add event listeners for download buttons
 downloadCsvBtn.addEventListener('click', downloadCsv);
