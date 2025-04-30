@@ -239,20 +239,34 @@ async function getExperts(question) {
 
   const systemPrompt = `
     You are an assistant tasked with identifying 3 experts for a roundtable discussion
-    on a specific question. These experts should be relevant to analyzing and answering questions about the provided documents.
+    on a specific question. These experts should be relevant to analyzing clinical development
+    and drug trial data, focusing on aspects important to a Clinical Development Director.
     
-    Consider the full conversation history when selecting experts, as the current question may relate to previous discussion points.
+    Consider the full conversation history when selecting experts, as the current question may relate 
+    to previous discussion points about clinical trials, drug development, or patient outcomes.
     
     For the given question, conversation history, and document context, suggest 3 distinct experts who would
-    have valuable perspectives on the topic. Each expert should have different specialties
-    and backgrounds to ensure diverse insights.
+    have valuable perspectives on clinical development. Each expert should have different specialties
+    and backgrounds to ensure comprehensive insights into trial design, safety, efficacy, and regulatory aspects.
 
     The experts should be able to analyze and interpret:
-    - Document content and structure
-    - Data patterns and relationships
-    - Technical and domain-specific aspects
-    - Contextual information
-    - Previous conversation points and their relationships
+    - Clinical trial data and documentation
+    - Safety and efficacy metrics
+    - Statistical patterns and relationships
+    - Regulatory compliance requirements
+    - Protocol design considerations
+    - Patient outcomes and adverse events
+    - Historical trial data and trends
+
+    Select from relevant specialties such as:
+    - Clinical Trial Design
+    - Biostatistics
+    - Medical Safety
+    - Regulatory Affairs
+    - Clinical Operations
+    - Data Management
+    - Patient Safety
+    - Medical Affairs
 
     Provide your response in JSON format with the following structure:
     {
@@ -308,15 +322,31 @@ async function generateExpertQuestions(question, expert) {
   const systemPrompt = `
     You are an assistant tasked with generating 3 insightful questions related to the user's
     main question. These questions should be specialized for ${expert.title}
-    with expertise in ${expert.specialty}.
+    with expertise in ${expert.specialty}, focusing on clinical development aspects.
 
+    Context: The user is a Clinical Development Director analyzing clinical data and outcomes.
+    
     Generate questions that:
-    1. Leverage this expert's unique perspective and knowledge
-    2. Focus on analyzing and interpreting the provided document content
-    3. Help extract meaningful insights from the available data
-    4. Address specific aspects of the user's question in relation to the documents
+    1. Leverage this expert's clinical expertise in relation to:
+       - Trial design and methodology
+       - Safety and efficacy metrics
+       - Regulatory compliance
+       - Patient outcomes
+    2. Focus on analyzing clinical data patterns and trends
+    3. Help extract insights relevant to drug development decisions
+    4. Address specific aspects of:
+       - Statistical significance
+       - Protocol adherence
+       - Adverse events
+       - Treatment effectiveness
+    5. Consider implications for:
+       - Future trial design
+       - Safety monitoring
+       - Regulatory submissions
+       - Clinical practice
 
-    Your questions should be clear, specific, and directly related to the content of the uploaded documents.
+    Your questions should be clear, specific, and directly related to clinical development aspects of the available data.
+    Focus on generating actionable insights for clinical trial optimization and drug development.
   `;
 
   const documentContext = `
@@ -359,12 +389,37 @@ async function getExpertAnswers(question, expert, expertQuestions) {
     You are ${expert.title}, an expert in ${expert.specialty}. 
     ${expert.background}
 
-    Answer the following questions based on your expertise and the provided document content.
+    As a clinical development expert, analyze the provided data and answer the following questions.
     Your answers should:
-    1. Be directly based on the content from the uploaded documents
-    2. Reference specific data points or sections from the documents
-    3. Provide clear, factual responses supported by the available information
-    4. Stay focused on your area of expertise while analyzing the document content
+    1. Focus on clinical relevance and implications:
+       - Safety and efficacy outcomes
+       - Statistical significance of findings
+       - Protocol compliance insights
+       - Patient-centric considerations
+    
+    2. Reference specific clinical data points:
+       - Trial outcomes and metrics
+       - Adverse event patterns
+       - Treatment effectiveness indicators
+       - Protocol adherence measures
+    
+    3. Provide evidence-based insights for:
+       - Clinical decision-making
+       - Trial design optimization
+       - Risk mitigation strategies
+       - Regulatory considerations
+    
+    4. Consider implications for:
+       - Future trial protocols
+       - Safety monitoring procedures
+       - Regulatory submissions
+       - Clinical practice guidelines
+
+    Format your responses to highlight:
+    - Key clinical findings
+    - Statistical significance
+    - Safety signals
+    - Recommendations for clinical development
   `;
 
   const documentContext = `
@@ -1172,36 +1227,44 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
 }
 
 async function generateFollowUpQuestions(question, finalAnswer) {
-  const systemPrompt = `You are an AI assistant helping users analyze data.
+  const systemPrompt = `You are an AI assistant helping a Clinical Development Director analyze clinical data.
   Based on the previous question and answer, suggest 3 relevant follow-up questions.
   
-  For data analysis questions:
-  - Focus on deeper insights from the data
-  - Suggest comparisons between different sheets if multiple sheets exist
-  - Ask about trends, patterns, or correlations
-  - Consider statistical analysis possibilities
-  - Avoid basic questions already answered
+  For clinical data analysis:
+  - Focus on safety and efficacy metrics
+  - Analyze patient outcomes and subgroup performance
+  - Investigate adverse event patterns and trends
+  - Consider statistical significance of findings
+  - Examine protocol compliance indicators
+  - Compare results across trial phases or cohorts
   
-  For expert analysis questions:
-  - Focus on expert perspectives
-  - Ask about implications and recommendations
-  - Consider different viewpoints
-  - Explore practical applications
+  For clinical development insights:
+  - Focus on implications for trial design
+  - Consider regulatory requirements and submissions
+  - Evaluate safety monitoring strategies
+  - Assess protocol optimization opportunities
+  - Explore impact on clinical practice
+  - Address risk mitigation approaches
   
-  Return questions in a JSON array format.
+  Ensure questions are:
+  1. Relevant to clinical development decisions
+  2. Focused on actionable insights
+  3. Aligned with regulatory requirements
+  4. Based on evidence from the data
   
+  Return questions in a JSON array format:
   {
-  "type": "object",
-  "properties": {
-    "questions": {
-      "type": "array",
-      "items": {
+    "type": "object",
+    "properties": {
+      "questions": {
+        "type": "array",
+        "items": {
         "type": "string"
+        }
       }
-    }
-  },
-  "required": ["questions"]
-}`;
+    },
+    "required": ["questions"]
+  }`;
 
   const userMessage = `Previous Question: ${question}\n\nAnswer: ${finalAnswer}\n\nGenerate 3 relevant follow-up questions.`;
 
