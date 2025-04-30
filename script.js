@@ -1,7 +1,8 @@
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
 const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
 const marked = new Marked();
-
+// Import jsMind from global scope since it's loaded via script tag
+// const { jsMind } = window;
 // DOM Elements
 const questionForm = document.getElementById("questionForm");
 const questionInput = document.getElementById("questionInput");
@@ -104,6 +105,133 @@ async function callOpenAI(systemPrompt, userMessage) {
     throw new Error(`API call failed: ${error.message}`);
   }
 }
+
+// Store current mindmap data
+let currentFinalmapData = null;
+
+// Function to generate mindmap data for jsMind
+async function generateFinalmapData(question, expertsData) {
+  const systemPrompt = `You are an expert at creating cumulative mindmaps. Given a question and multiple experts' analyses, 
+  create a hierarchical mindmap structure that combines insights from all experts. The structure should be in jsMind format.
+
+  Return a JSON object in this exact format:
+  {
+    "meta": {
+      "name": "Question Summary",
+      "author": "AI Assistant",
+      "version": "1.0"
+    },
+    "format": "node_tree",
+    "data": {
+      "id": "root",
+      "topic": "Main Question",
+      "children": [
+        {
+          "id": "theme1",
+          "topic": "Key Theme 1",
+          "direction": "right",
+          "children": [
+            {
+              "id": "expert1_insight1",
+              "topic": "Expert 1: Specific insight",
+              "direction": "right"
+            }
+          ]
+        }
+      ]
+    }
+  }`;
+
+  const userMessage = `Question: "${question}"
+Experts Analysis:
+${expertsData.map(expert => `
+Expert: ${expert.name} (${expert.role})
+Q&A: ${JSON.stringify(expert.questionsAndAnswers, null, 2)}
+Summary: ${expert.summary}
+`).join('\n')}
+
+Generate a cumulative mindmap structure that synthesizes insights from all experts.
+Make sure to:
+1. Set the root topic as the main question
+2. Group insights by common themes
+3. Label each insight with the expert's name
+4. Keep topics concise but informative`;
+
+  try {
+    const response = await callOpenAI(systemPrompt, userMessage);
+    const mindmapData = JSON.parse(response);
+    viewMindmapBtn.classList.remove("d-none");
+    return mindmapData;
+  } catch (error) {
+    console.error("Failed to generate mindmap data:", error);
+    throw error;
+  }
+}
+
+// Function to render mindmap using jsMind
+function renderFinalmap(mindmapData) {
+  // Clear existing content
+  const container = document.getElementById('jsmind_container');
+  container.innerHTML = '';
+
+  // Initialize jsMind options
+  const options = {
+    container: 'jsmind_container',
+    theme: 'primary',
+    editable: false,
+    support_html: true,
+    view: {
+      hmargin: 100,
+      vmargin: 50,
+      line_width: 2,
+      line_color: '#2196F3',
+      draggable: true,
+      hide_scrollbars_when_mouse_out: true
+    },
+    layout: {
+      hspace: 120,
+      vspace: 30,
+      pspace: 13
+    }
+  };
+
+  // Show modal first
+  const mindmapModal = new bootstrap.Modal(document.getElementById('mindmapModal'));
+  mindmapModal.show();
+
+  // Create and show mindmap after modal is shown
+  document.getElementById('mindmapModal').addEventListener('shown.bs.modal', function() {
+    // Initialize jsMind
+    const jm = new jsMind(options);
+    
+    // Show mindmap data
+    try {
+      jm.show(mindmapData);
+      currentFinalmapData = mindmapData;
+      
+      // Force resize after a short delay
+      setTimeout(() => {
+        if (jm && typeof jm.resize === 'function') {
+          jm.resize();
+        }
+      }, 200);
+    } catch (error) {
+      console.error('Error showing mindmap:', error);
+      showError('Failed to display mindmap. Please try again.');
+    }
+  }, { once: true });
+}
+
+// Function to handle view mindmap button click
+async function handleViewFinalmap() {
+  if (!currentFinalmapData) {
+    showError('No mindmap data available yet. Please ask a question first.');
+    return;
+  }
+  renderFinalmap(currentFinalmapData);
+}
+
+viewMindmapBtn.addEventListener("click", handleViewFinalmap);
 
 // Get experts for the roundtable
 async function getExperts(question) {
@@ -803,187 +931,196 @@ function addChatMessage(message, isUser = false) {
 }
 
 async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
-  expertsContainer.innerHTML =  "";
+  try {
+    // Generate mindmap data
+    showLoading("Generating cumulative mindmap...");
+    currentFinalmapData = await generateFinalmapData(
+      expertsData[0].question,
+      expertsData
+    );
+    hideLoading();
 
-  // Add thinking animation container
-  const thinkingDiv = document.createElement("div");
-  thinkingDiv.className = "thinking-animation";
-  thinkingDiv.innerHTML = `
-    <div class="thinking-dots">
-      <span></span>
-      <span></span>
-      <span></span>
-    </div>
-  `;
-  expertsContainer.appendChild(thinkingDiv);
+    expertsContainer.innerHTML = "";
 
-  // Create container for expert analysis
-  const analysisDiv = Object.assign(document.createElement("div"), {
-    className: "expert-analysis",
-  });
-  expertsContainer.appendChild(analysisDiv);
+    // Add thinking animation container
+    const thinkingDiv = document.createElement("div");
+    thinkingDiv.className = "thinking-animation";
+    thinkingDiv.innerHTML = `
+      <div class="thinking-dots">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    `;
+    expertsContainer.appendChild(thinkingDiv);
 
-  // Function to simulate typing effect
-  const typeText = async (element, text, speed = 0) => {
-    let htmlContent = "";
-    let textIndex = 0;
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === "<") {
-        let tag = "<";
-        i++;
-        while (text[i] !== ">") {
-          tag += text[i];
+    // Create container for expert analysis
+    const analysisDiv = Object.assign(document.createElement("div"), {
+      className: "expert-analysis",
+    });
+    expertsContainer.appendChild(analysisDiv);
+
+    // Function to simulate typing effect
+    const typeText = async (element, text, speed = 0) => {
+      let htmlContent = "";
+      let textIndex = 0;
+      for (let i = 0; i < text.length; i++) {
+        if (text[i] === "<") {
+          let tag = "<";
           i++;
+          while (text[i] !== ">") {
+            tag += text[i];
+            i++;
+          }
+          tag += text[i]; // Include closing '>'
+          htmlContent += tag;
+        } else {
+          htmlContent += text[i];
+          textIndex++;
+          element.innerHTML = htmlContent;
+          element.style.fontSize = "14px";
+          // Scroll into view smoothly as text is typed
+          element.scrollIntoView({ behavior: "smooth", block: "end" });
+          await new Promise((resolve) => setTimeout(resolve, speed));
         }
-        tag += text[i]; // Include closing '>'
-        htmlContent += tag;
-      } else {
-        htmlContent += text[i];
-        textIndex++;
-        element.innerHTML = htmlContent;
-        element.style.fontSize = "14px";
-        // Scroll into view smoothly as text is typed
-        element.scrollIntoView({ behavior: "smooth", block: "end" });
-        await new Promise((resolve) => setTimeout(resolve, speed));
       }
-    }
-  };
+    };
 
-  if (expertsData) {
-    // Expert analysis case - keep existing expert handling code
-    const expertReasoning = expertsData
-      .map(
-        (expert) =>
-          `Based on the complexity of your question, I've selected <strong>${expert.title}</strong> who specializes in <strong>${expert.specialty}</strong>. Their background in <strong>${expert.background}</strong> makes them particularly qualified to provide insights on this matter.`
-      )
-      .join("\n\n");
+    if (expertsData) {
+      // Expert analysis case - keep existing expert handling code
+      const expertReasoning = expertsData
+        .map(
+          (expert) =>
+            `Based on the complexity of your question, I've selected <strong>${expert.title}</strong> who specializes in <strong>${expert.specialty}</strong>. Their background in <strong>${expert.background}</strong> makes them particularly qualified to provide insights on this matter.`
+        )
+        .join("\n\n");
 
-    const reasoningDiv = document.createElement("div");
-    reasoningDiv.className = "chat-message system-message mb-4";
-    analysisDiv.appendChild(reasoningDiv);
-    await typeText(reasoningDiv, expertReasoning);
+      const reasoningDiv = document.createElement("div");
+      reasoningDiv.className = "chat-message system-message mb-4";
+      analysisDiv.appendChild(reasoningDiv);
+      await typeText(reasoningDiv, expertReasoning);
 
-    for (const expert of expertsData) {
-      const card = document.createElement("div");
-      card.className = "expert-card mb-4";
-      analysisDiv.appendChild(card);
+      for (const expert of expertsData) {
+        const card = document.createElement("div");
+        card.className = "expert-card mb-4";
+        analysisDiv.appendChild(card);
 
-      const cardContent = `
-        <div class="card">
-          <div class="card-body">
-            <h5 class="card-title">${expert.title}</h5>
-            <h6 class="card-subtitle mb-2 text-muted">${expert.specialty}</h6>
-            <p class="card-text"><strong>Background:</strong> ${
-              expert.background
-            }</p>
-            <div class="qa-section">
-              ${expert.questionsAndAnswers
-                .map(
-                  (qa) => `
+        const cardContent = `
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">${expert.title}</h5>
+              <h6 class="card-subtitle mb-2 text-muted">${expert.specialty}</h6>
+              <p class="card-text"><strong>Background:</strong> ${
+                expert.background
+              }</p>
+              <div class="qa-section">
+                ${expert.questionsAndAnswers
+                  .map(
+                    (qa) => `
                 <div class="qa-item mb-3">
                   <div class="question"><strong>Q:</strong> ${qa.question}</div>
                   <div class="answer"><strong>A:</strong> ${qa.answer}</div>
                 </div>
               `
-                )
-                .join("")}
-            </div>
-            <p class="expert-summary mt-3"><strong>Summary:</strong> ${
-              expert.summary
-            }</p>
-            ${expert.mermaid ? `
-              <div class="mindmap-section mt-4">
-                <h6 class="text-primary mb-3">
-                  <i class="bi bi-diagram-3 me-2"></i>Analysis Mindmap
-                </h6>
-                <div class="mindmap-container" style="width: 100%; max-height: 400px; overflow: auto;">
-                  <div class="mindmap" style="min-width: fit-content;"></div>
-                </div>
+                  )
+                  .join("")}
               </div>
-            ` : ''}
+              <p class="expert-summary mt-3"><strong>Summary:</strong> ${
+                expert.summary
+              }</p>
+              ${expert.mermaid ? `
+                <div class="mindmap-section mt-4">
+                  <h6 class="text-primary mb-3">
+                    <i class="bi bi-diagram-3 me-2"></i>Analysis Mindmap
+                  </h6>
+                  <div class="mindmap-container" style="width: 100%; max-height: 400px; overflow: auto;">
+                    <div class="mindmap" style="min-width: fit-content;"></div>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
           </div>
-        </div>
-      `;
-      await typeText(card, cardContent, 0);
+        `;
+        await typeText(card, cardContent, 0);
 
-      // Initialize mindmap if expert has one
-      if (expert.mermaid) {
-        const mindmapContainer = card.querySelector('.mindmap');
-        try {
-          mindmapContainer.innerHTML = expert.mermaid;
-          await mermaid.init(undefined, mindmapContainer);
-          
-          // Make SVG responsive in card
-          const svg = mindmapContainer.querySelector('svg');
-          if (svg) {
-            svg.style.width = '100%';
-            svg.style.height = 'auto';
-            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-          }
+        // Initialize mindmap if expert has one
+        if (expert.mermaid) {
+          const mindmapContainer = card.querySelector('.mindmap');
+          try {
+            mindmapContainer.innerHTML = expert.mermaid;
+            await mermaid.init(undefined, mindmapContainer);
+            
+            // Make SVG responsive in card
+            const svg = mindmapContainer.querySelector('svg');
+            if (svg) {
+              svg.style.width = '100%';
+              svg.style.height = 'auto';
+              svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            }
 
-          // Setup click handler for mindmap section
-          const mindmapSection = card.querySelector('.mindmap-section');
-          mindmapSection.style.cursor = 'pointer';
-          mindmapSection.onclick = async () => {
-            // Create modal dynamically
-            const modalHtml = `
-              <div class="modal fade" tabindex="-1">
-                <div class="modal-dialog modal-xl modal-dialog-centered">
-                  <div class="modal-content">
-                    <div class="modal-header">
-                      <h5 class="modal-title">
-                        <i class="bi bi-diagram-3 me-2"></i>${expert.title}'s Analysis Mindmap
-                      </h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body p-4">
-                      <div class="mindmap-modal" style="min-height: 70vh; overflow: auto;"></div>
+            // Setup click handler for mindmap section
+            const mindmapSection = card.querySelector('.mindmap-section');
+            mindmapSection.style.cursor = 'pointer';
+            mindmapSection.onclick = async () => {
+              // Create modal dynamically
+              const modalHtml = `
+                <div class="modal fade" tabindex="-1">
+                  <div class="modal-dialog modal-xl modal-dialog-centered">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">
+                          <i class="bi bi-diagram-3 me-2"></i>${expert.title}'s Analysis Mindmap
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body p-4">
+                        <div class="mindmap-modal" style="min-height: 70vh; overflow: auto;"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            `;
+              `;
 
-            const modalWrapper = document.createElement('div');
-            modalWrapper.innerHTML = modalHtml;
-            const modalElement = modalWrapper.firstElementChild;
-            document.body.appendChild(modalElement);
+              const modalWrapper = document.createElement('div');
+              modalWrapper.innerHTML = modalHtml;
+              const modalElement = modalWrapper.firstElementChild;
+              document.body.appendChild(modalElement);
 
-            const modal = new bootstrap.Modal(modalElement);
-            
-            try {
-              const modalMindmap = modalElement.querySelector('.mindmap-modal');
-              const { svg } = await mermaid.render(`modal-mindmap-${Date.now()}`, expert.mermaid);
-              modalMindmap.innerHTML = svg;
+              const modal = new bootstrap.Modal(modalElement);
               
-              const modalSvg = modalMindmap.querySelector('svg');
-              if (modalSvg) {
-                modalSvg.style.width = '100%';
-                modalSvg.style.height = 'auto';
-                modalSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-              }
-              
-              modal.show();
+              try {
+                const modalMindmap = modalElement.querySelector('.mindmap-modal');
+                const { svg } = await mermaid.render(`modal-mindmap-${Date.now()}`, expert.mermaid);
+                modalMindmap.innerHTML = svg;
+                
+                const modalSvg = modalMindmap.querySelector('svg');
+                if (modalSvg) {
+                  modalSvg.style.width = '100%';
+                  modalSvg.style.height = 'auto';
+                  modalSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                }
+                
+                modal.show();
 
-              modalElement.addEventListener('hidden.bs.modal', () => {
-                modal.dispose();
+                modalElement.addEventListener('hidden.bs.modal', () => {
+                  modal.dispose();
+                  modalElement.remove();
+                });
+              } catch (error) {
+                console.error('Failed to render modal mindmap:', error);
                 modalElement.remove();
-              });
-            } catch (error) {
-              console.error('Failed to render modal mindmap:', error);
-              modalElement.remove();
-              alert('Failed to render mindmap in modal: ' + error.message);
-            }
-          };
-        } catch (error) {
-          console.error(`Failed to render mindmap for ${expert.title}:`, error);
-          mindmapContainer.innerHTML = `
-            <div class="alert alert-danger d-flex align-items-center">
-              <i class="bi bi-exclamation-triangle-fill me-2"></i>
-              Failed to render mindmap: ${error.message}
-            </div>`;
+                alert('Failed to render mindmap in modal: ' + error.message);
+              }
+            };
+          } catch (error) {
+            console.error(`Failed to render mindmap for ${expert.title}:`, error);
+            mindmapContainer.innerHTML = `
+              <div class="alert alert-danger d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                Failed to render mindmap: ${error.message}
+              </div>`;
+          }
         }
-      }
     }
     addChatMessage(finalAnswer);
 
@@ -1028,7 +1165,10 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
 
   // Remove thinking animation
   thinkingDiv.remove();
-  setupMindmapButton();
+} catch (error) {
+  console.error("Failed to add analysis result:", error);
+  showError(error.message);
+}
 }
 
 async function generateFollowUpQuestions(question, finalAnswer) {
@@ -1048,7 +1188,20 @@ async function generateFollowUpQuestions(question, finalAnswer) {
   - Consider different viewpoints
   - Explore practical applications
   
-  Return questions in a JSON array format.`;
+  Return questions in a JSON array format.
+  
+  {
+  "type": "object",
+  "properties": {
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["questions"]
+}`;
 
   const userMessage = `Previous Question: ${question}\n\nAnswer: ${finalAnswer}\n\nGenerate 3 relevant follow-up questions.`;
 
@@ -1056,7 +1209,7 @@ async function generateFollowUpQuestions(question, finalAnswer) {
     const response = await callOpenAI(systemPrompt, userMessage);
     let questions;
     try {
-      questions = JSON.parse(response);
+      questions = JSON.parse(response).questions;
     } catch {
       // If response isn't valid JSON, try to extract array from markdown
       const match = response.match(/\[[\s\S]*\]/);
@@ -1198,7 +1351,6 @@ ${JSON.stringify(analysisData.Sheet1.slice(0, 5), null, 2)}`;
           });
 
           showLoading("Formatting analysis results...");
-          console.log(analysisResult)
           // Convert pandas DataFrame result to proper format
           let tableData = null;
           if (analysisResult && typeof analysisResult === 'object') {
@@ -1318,15 +1470,6 @@ ${formattedAnalysis}`;
     hideLoading();
     showError(error.message);
   }
-}
-
-// Function to show mindmap button and setup click handler
-function setupMindmapButton() {
-  viewMindmapBtn.classList.remove("d-none");
-  viewMindmapBtn.addEventListener("click", () => {
-    const mindmapSection = document.querySelector(".mindmap-section");
-    mindmapSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
 
 mermaid.initialize({
