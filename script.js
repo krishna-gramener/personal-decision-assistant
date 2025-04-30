@@ -25,10 +25,10 @@ let currentAnalysisData = null;
 let currentQuestion = null;
 
 // Global variables
-const token_url = "";
-const openai_url = "";
+const token_url = "https://llmfoundry.straive.com/token";
+const openai_url = "https://llmfoundry.straive.com/openai/v1/chat/completions";
 const gemini_url =
-  "";
+  "https://llmfoundry.straive.com/gemini/v1beta/models/gemini-2.0-flash:generateContent";
 const { token: key } = await fetch(token_url, { credentials: "include" }).then(
   (r) => r.json()
 );
@@ -933,12 +933,6 @@ function addChatMessage(message, isUser = false) {
 async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
   try {
     // Generate mindmap data
-    showLoading("Generating cumulative mindmap...");
-    currentFinalmapData = await generateFinalmapData(
-      expertsData[0].question,
-      expertsData
-    );
-    hideLoading();
 
     expertsContainer.innerHTML = "";
 
@@ -988,6 +982,12 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
 
     if (expertsData) {
       // Expert analysis case - keep existing expert handling code
+      showLoading("Generating cumulative mindmap...");
+      currentFinalmapData = await generateFinalmapData(
+        expertsData[0].question,
+        expertsData
+      );
+      hideLoading();
       const expertReasoning = expertsData
         .map(
           (expert) =>
