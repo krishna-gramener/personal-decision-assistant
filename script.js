@@ -21,24 +21,84 @@ const viewMindmapBtn = document.getElementById("viewMindmapBtn");
 const downloadCsvBtn = document.getElementById("downloadCsv");
 const downloadXlsxBtn = document.getElementById("downloadXlsx");
 const container = document.getElementById('jsmind_container');
+const mainContent = document.getElementById('mainContent');
+const apiForm = document.getElementById('apiForm');
 let currentAnalysisData = null;
 let currentQuestion = null;
-let key=null;
-init();
-async function init(){
-  const token_url = "https://llmfoundry.straive.com/token";
-  const { token } = await fetch(token_url, { credentials: "include" }).then(
-    (r) => r.json()
-  );
-  key=token;
+let key = null;
+let token_url = null;
+let openai_url = null;
+let gemini_url = null;
+let currentExpertsData=[];
+let sheetData=[];
+// Check for stored API URLs
+function checkStoredAPIs() {
+    const stored_token_url = localStorage.getItem('token_url');
+    const stored_openai_url = localStorage.getItem('openai_url');
+    const stored_gemini_url = localStorage.getItem('gemini_url');
+    
+    if (stored_token_url && stored_openai_url && stored_gemini_url) {
+        token_url = stored_token_url;
+        openai_url = stored_openai_url;
+        gemini_url = stored_gemini_url;
+        return true;
+    }
+    return false;
 }
 
-const openai_url = "https://llmfoundry.straive.com/azure/openai/deployments/gpt-4.1-nano/chat/completions?api-version=2025-01-01-preview";
-const gemini_url =
-  "https://llmfoundry.straive.com/gemini/v1beta/models/gemini-2.0-flash:generateContent";
+// Show API form
+function showAPIForm() {
+    apiForm.classList.remove('hidden');
+    mainContent.classList.add('hidden');
+}
 
-let currentExpertsData = [];
-let sheetData = [];
+// Handle API form submission
+async function handleAPISubmit(event) {
+    event.preventDefault();
+    const tokenApiInput = document.getElementById('tokenApi');
+    const openaiApiInput = document.getElementById('openaiApi');
+    const geminiApiInput = document.getElementById('geminiApi');
+    
+    token_url = tokenApiInput.value;
+    openai_url = openaiApiInput.value;
+    gemini_url = geminiApiInput.value;
+    
+    // Store in localStorage
+    localStorage.setItem('token_url', token_url);
+    localStorage.setItem('openai_url', openai_url);
+    localStorage.setItem('gemini_url', gemini_url);
+    
+    // Hide form and show main content
+    apiForm.classList.add('hidden');
+    mainContent.classList.remove('hidden');
+    
+    // Initialize the app
+    await init();
+}
+
+async function init() {
+    try {
+        if (!checkStoredAPIs()) {
+            showAPIForm();
+            return;
+        }
+        
+        const response = await fetch(token_url, { credentials: "include" });
+        const data = await response.json();
+        key = data.token;
+        
+        // Show main content if we have the token
+        mainContent.classList.remove('hidden');
+        apiForm.classList.add('hidden');
+    } catch (error) {
+        showError("Failed to initialize: " + error.message);
+    }
+}
+
+// Add form submit listener
+apiForm.addEventListener('submit', handleAPISubmit);
+
+init();
 
 // Function to get appropriate icon class based on file type
 const getFileIcon = (filename) => {

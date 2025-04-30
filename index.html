@@ -186,7 +186,7 @@
         margin: 10px 0;
       }
       .hidden {
-        display: none;
+        display: none !important;
       }
       .expert-avatar {
         width: 40px;
@@ -527,6 +527,36 @@
         font-weight: bold !important;
         border-color: #1976D2 !important;
       }
+
+      /* API Form styles */
+      .api-form-container {
+        max-width: 600px;
+        margin: 2rem auto;
+        padding: 2rem;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .api-form-container h4 {
+        margin-bottom: 1.5rem;
+        color: #1a73e8;
+      }
+
+      .api-form-container .form-group {
+        margin-bottom: 1.5rem;
+      }
+
+      .api-form-container label {
+        font-weight: 500;
+        color: #495057;
+        margin-bottom: 0.5rem;
+      }
+
+      .api-form-container .form-text {
+        color: #6c757d;
+        font-size: 0.875rem;
+      }
     </style>
   </head>
   <body>
@@ -541,8 +571,35 @@
         </div>
       </nav>
 
+      <!-- API Configuration Form -->
+      <div id="apiForm" class="container hidden">
+        <div class="api-form-container">
+          <h4><i class="bi bi-gear-fill me-2"></i>API Configuration</h4>
+          <form>
+            <div class="form-group">
+              <label for="tokenApi">Token API URL</label>
+              <input type="text" class="form-control" id="tokenApi" required>
+              <div class="form-text">Enter the URL for token authentication</div>
+            </div>
+            <div class="form-group">
+              <label for="openaiApi">OpenAI API URL</label>
+              <input type="text" class="form-control" id="openaiApi" required>
+              <div class="form-text">Enter the URL for OpenAI API endpoint</div>
+            </div>
+            <div class="form-group">
+              <label for="geminiApi">Gemini API URL</label>
+              <input type="text" class="form-control" id="geminiApi" required>
+              <div class="form-text">Enter the URL for Gemini API endpoint</div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">
+              <i class="bi bi-check-circle me-2"></i>Save Configuration
+            </button>
+          </form>
+        </div>
+      </div>
+
       <!-- Main Content -->
-      <div class="main-content">
+      <div id="mainContent" class="main-content">
         <!-- Left Section - Expert Analysis -->
         <div class="expert-section">
           <div class="section">
