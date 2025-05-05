@@ -586,50 +586,55 @@ async function generateExpertMindmapWithLLM(
   finalAnswer
 ) {
   const systemPrompt = `
-You are an assistant tasked with creating a Mermaid mindmap visualization. You must follow these rules exactly:
+You are an assistant tasked with creating a Mermaid mindmap visualization. Follow these rules precisely:
 
-1. Start with \`\`\`mermaid followed by a newline
-2. The next line must be exactly: mindmap
-3. Use only ASCII characters (no Unicode or special characters)
-4. Use proper indentation with spaces (2 spaces per level)
-5. Root node must use (( )) notation
-6. Follow this exact structure:
+1. Format:
+   - First line: \`\`\`mermaid
+   - Second line: mindmap
+   - Use 2 spaces for each indentation level
+   - Root node: (( )) notation
+   - Child nodes: plain text without special formatting
 
+2. Content Rules:
+   - Use only alphanumeric characters and basic punctuation
+   - Avoid hyphens (-) at start of lines
+   - Keep node text concise (max 40 characters)
+   - No special characters or Unicode
+   - No HTML or markdown
+
+Example Structure:
 \`\`\`mermaid
 mindmap
-  root((Main Topic))
-    Topic1
-      Subtopic1
-      Subtopic2
-    Topic2
-      Subtopic3
-      Subtopic4
+  root((Expert Analysis))
+    Finding 1
+      Detail A
+      Detail B
+    Finding 2
+      Detail C
 \`\`\`
 
-Create a mindmap that shows this expert's analysis process, key findings, and relationship to the final answer.
+Create a focused mindmap showing the expert's key findings and their connection to the final answer.
 ONLY output the mermaid code block, nothing else.`;
 
   const userMessage = `
-Expert: ${expert.title} (${expert.specialty})
-Background: ${expert.background}
+Context:
+Expert: ${expert.title}
+Specialty: ${expert.specialty}
+Question: ${question}
 
-Question Asked: ${question}
-
-Expert's Q&A Process:
+Analysis:
 ${questionsAndAnswers
   .map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`)
   .join("\n\n")}
 
-Expert's Summary: ${expert.summary}
+Summary: ${expert.summary}
+Conclusion: ${finalAnswer}
 
-Final Answer: ${finalAnswer}
-
-Remember:
-1. Use the expert's title as the root node
-2. Branch out into their key findings
-3. Show how their analysis connects to the final answer
-4. Keep text concise and clear
-5. Use only ASCII characters`;
+Guidelines:
+1. Root: Expert's role as central node
+2. Level 1: Key findings/themes
+3. Level 2: Supporting evidence
+4. Level 3: Connection to final answer`;
 
   try {
     const response = await callOpenAI(systemPrompt, userMessage);
