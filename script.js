@@ -1364,7 +1364,7 @@ function addFollowUpQuestions(questions) {
 
   followupContainer.innerHTML = "";
   const wrapper = document.createElement("div");
-  wrapper.className = "follow-up-questions mt-4";
+  wrapper.className = "follow-up-questions mt-1";
 
   const header = document.createElement("h6");
   header.className = "mb-3";
