@@ -1366,11 +1366,6 @@ function addFollowUpQuestions(questions) {
   const wrapper = document.createElement("div");
   wrapper.className = "follow-up-questions mt-1";
 
-  const header = document.createElement("h6");
-  header.className = "mb-3";
-  header.textContent = "Follow-up Questions:";
-  wrapper.appendChild(header);
-
   const list = document.createElement("div");
   list.className = "d-flex flex-column gap-2";
 
