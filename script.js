@@ -1057,7 +1057,7 @@ function addChatMessage(message, isUser = false) {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
+async function addAnalysisResult(finalAnswer, expertsData) {
   try {
     // Generate mindmap data
 
@@ -1251,7 +1251,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
     }
     addChatMessage(finalAnswer);
 
-    if (conversationHistory.length >= 2 && !isFollowUp) {
+    if (conversationHistory.length >= 2) {
       const followUpQuestions = await generateFollowUpQuestions(
         conversationHistory[conversationHistory.length - 2].content,
         finalAnswer
@@ -1281,7 +1281,7 @@ async function addAnalysisResult(finalAnswer, expertsData, isFollowUp = false) {
       .trim();
     addChatMessage(formattedContent);
     // Generate follow-up questions using only the formatted analysis
-    if (conversationHistory.length >= 2 && !isFollowUp) {
+    if (conversationHistory.length >= 2) {
       const followUpQuestions = await generateFollowUpQuestions(
         conversationHistory[conversationHistory.length - 2].content,
         formattedContent // Pass only the formatted analysis without Python code
@@ -1395,7 +1395,7 @@ questionForm.addEventListener("submit", async (e) => {
 });
 
 // Process the question
-async function processQuestion(question, isFollowUp = false) {
+async function processQuestion(question) {
   try {
     addChatMessage(question, true);
     addToHistory(question, true);
@@ -1534,7 +1534,7 @@ ${pythonCode}
 ${formattedAnalysis}`;
 
             addToHistory(formattedAnalysis, false);
-            await addAnalysisResult(formattedResult, null, isFollowUp);
+            await addAnalysisResult(formattedResult, null);
           } else {
             currentAnalysisData = null;
           }
@@ -1553,8 +1553,7 @@ ${formattedAnalysis}`;
       }
     }
     // Regular expert consultation flow if no Excel analysis needed
-    let expertsData = !isFollowUp ? [] : currentExpertsData;
-    if (!isFollowUp) {
+    let expertsData =  [] ;
       const experts = await getExperts(question);
       for (const [i, expert] of experts.entries()) {
         expert.name ||= `Expert ${i + 1}`;
@@ -1571,21 +1570,7 @@ ${formattedAnalysis}`;
         });
       }
       currentExpertsData = expertsData;
-    } else {
-      for (const expert of expertsData) {
-        const qs = await generateExpertQuestions(question, expert);
-        const as = await getExpertAnswers(question, expert, qs);
-        const qa = qs.map((q, idx) => ({ question: q, answer: as[idx] }));
-        expert.questions = [...expert.questions, ...qs];
-        expert.answers = [...expert.answers, ...as];
-        expert.questionsAndAnswers = [...expert.questionsAndAnswers, ...qa];
-        expert.summary = await generateExpertSummary(
-          question,
-          expert,
-          expert.questionsAndAnswers
-        );
-      }
-    }
+    
     const finalAnswer = await generateFinalAnswer(question, expertsData);
     addToHistory(finalAnswer, false);
     for (const expert of expertsData) {
@@ -1597,7 +1582,7 @@ ${formattedAnalysis}`;
       );
     }
     hideLoading();
-    await addAnalysisResult(finalAnswer, expertsData, isFollowUp);
+    await addAnalysisResult(finalAnswer, expertsData);
   } catch (error) {
     hideLoading();
     showError(error.message);
