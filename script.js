@@ -1,4 +1,15 @@
-import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
+import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm"
+import { openai_url, gemini_url, token, setupAPI} from './api-config.js';
+import { initializeMindmap, generateFinalmapData, generateExpertMindmapWithLLM, currentFinalmapData, updateMindmapData } from './mindmap-handlers.js';
+
+// Initialize mindmap handlers once DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    initializeMindmap({
+        container: document.getElementById('jsmind_container'),
+        viewMindmapBtn: document.getElementById('viewMindmapBtn'),
+        mindmapModal: document.getElementById('mindmapModal')
+    });
+});
 const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
 const marked = new Marked();
 
@@ -25,80 +36,11 @@ const mainContent = document.getElementById('mainContent');
 const apiForm = document.getElementById('apiForm');
 let currentAnalysisData = null;
 let currentQuestion = null;
-let key = null;
-let token_url = null;
-let openai_url = null;
-let gemini_url = null;
 let currentExpertsData=[];
 let sheetData=[];
-// Check for stored API URLs
-function checkStoredAPIs() {
-    const stored_token_url = localStorage.getItem('token_url');
-    const stored_openai_url = localStorage.getItem('openai_url');
-    const stored_gemini_url = localStorage.getItem('gemini_url');
-    
-    if (stored_token_url && stored_openai_url && stored_gemini_url) {
-        token_url = stored_token_url;
-        openai_url = stored_openai_url;
-        gemini_url = stored_gemini_url;
-        return true;
-    }
-    return false;
-}
 
-// Show API form
-function showAPIForm() {
-    apiForm.classList.remove('hidden');
-    mainContent.classList.add('hidden');
-}
-
-// Handle API form submission
-async function handleAPISubmit(event) {
-    event.preventDefault();
-    const tokenApiInput = document.getElementById('tokenApi');
-    const openaiApiInput = document.getElementById('openaiApi');
-    const geminiApiInput = document.getElementById('geminiApi');
-    
-    token_url = tokenApiInput.value;
-    openai_url = openaiApiInput.value;
-    gemini_url = geminiApiInput.value;
-    
-    // Store in localStorage
-    localStorage.setItem('token_url', token_url);
-    localStorage.setItem('openai_url', openai_url);
-    localStorage.setItem('gemini_url', gemini_url);
-    
-    // Hide form and show main content
-    apiForm.classList.add('hidden');
-    mainContent.classList.remove('hidden');
-    
-    // Initialize the app
-    await init();
-}
-
-async function init() {
-    try {
-        if (!checkStoredAPIs()) {
-            showAPIForm();
-            return;
-        }
-        
-        const response = await fetch(token_url, { credentials: "include" });
-        const data = await response.json();
-        key = data.token;
-        
-        // Show main content if we have the token
-        mainContent.classList.remove('hidden');
-        apiForm.classList.add('hidden');
-    } catch (error) {
-        showError("Failed to initialize: " + error.message);
-    }
-}
-
-// Add form submit listener
-apiForm.addEventListener('submit', handleAPISubmit);
-
-init();
+// Initialize API configuration
+setupAPI(apiForm, mainContent);
 
 // Function to get appropriate icon class based on file type
 const getFileIcon = (filename) => {
@@ -126,6 +68,27 @@ let extractedData = {
   docx: [],
 };
 
+// Function to format extracted data from all file types
+function formatExtractedData() {
+    const fileTypes = {
+        pdfs: { prefix: 'PDF', needsStringify: false },
+        excel: { prefix: 'Excel', needsStringify: true },
+        csv: { prefix: 'CSV', needsStringify: true },
+        docx: { prefix: 'DOCX', needsStringify: false }
+    };
+
+    return Object.entries(fileTypes)
+        .map(([type, { prefix, needsStringify }]) => {
+            return extractedData[type]
+                .map(file => {
+                    const content = needsStringify ? JSON.stringify(file.content) : file.content;
+                    return `${prefix}: ${file.filename}\nContent: ${content}`;
+                })
+                .join('\n\n');
+        })
+        .join('\n\n');
+}
+
 // Show loading state
 function showLoading(message) {
   loadingMessage.textContent = message;
@@ -138,18 +101,18 @@ function hideLoading() {
 }
 
 // Show error message
-function showError(message) {
+export function showError(message) {
   errorMessage.textContent = message;
   errorAlert.classList.remove("hidden");
 }
 
 // Call OpenAI API
-async function callOpenAI(systemPrompt, userMessage) {
+export async function callOpenAI(systemPrompt, userMessage) {
   try {
     const response = await fetch(openai_url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${key}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -171,133 +134,7 @@ async function callOpenAI(systemPrompt, userMessage) {
   }
 }
 
-// Store current mindmap data
-let currentFinalmapData = null;
 
-// Function to generate mindmap data for jsMind
-async function generateFinalmapData(question, expertsData) {
-  const systemPrompt = `You are an expert at creating cumulative mindmaps. Given a question and multiple experts' analyses, 
-  create a hierarchical mindmap structure that combines insights from all experts. The structure should be in jsMind format.
-  Direction should always be right.
-
-  Return a JSON object in this exact format:
-  {
-    "meta": {
-      "name": "Question Summary",
-      "author": "AI Assistant",
-      "version": "1.0"
-    },
-    "format": "node_tree",
-    "data": {
-      "id": "root",
-      "topic": "Main Question",
-      "children": [
-        {
-          "id": "theme1",
-          "topic": "Key Theme 1",
-          "direction": "right",
-          "children": [
-            {
-              "id": "expert1_insight1",
-              "topic": "Expert 1: Specific insight",
-              "direction": "right"
-            }
-          ]
-        }
-      ]
-    }
-  }`;
-
-  const userMessage = `Question: "${question}"
-Experts Analysis:
-${expertsData.map(expert => `
-Expert: ${expert.name} (${expert.role})
-Q&A: ${JSON.stringify(expert.questionsAndAnswers, null, 2)}
-Summary: ${expert.summary}
-`).join('\n')}
-
-Generate a cumulative mindmap structure that synthesizes insights from all experts.
-Make sure to:
-1. Set the root topic as the main question
-2. Group insights by common themes
-3. Label each insight with the expert's name
-4. Keep topics concise but informative
-5. Direction should always be right`;
-
-  try {
-    const response = await callOpenAI(systemPrompt, userMessage);
-    const mindmapData = JSON.parse(response);
-    viewMindmapBtn.classList.remove("d-none");
-    return mindmapData;
-  } catch (error) {
-    console.error("Failed to generate mindmap data:", error);
-    throw error;
-  }
-}
-
-// Function to render mindmap using jsMind
-function renderFinalmap(mindmapData) {
-  // Clear existing content
-  container.innerHTML = '';
-
-  // Initialize jsMind options
-  const options = {
-    container: 'jsmind_container',
-    theme: 'primary',
-    editable: false,
-    support_html: true,
-    view: {
-      hmargin: 100,
-      vmargin: 50,
-      line_width: 2,
-      line_color: '#2196F3',
-      draggable: true,
-      hide_scrollbars_when_mouse_out: true
-    },
-    layout: {
-      hspace: 120,
-      vspace: 30,
-      pspace: 13
-    }
-  };
-
-  // Show modal first
-  const mindmapModal = new bootstrap.Modal(document.getElementById('mindmapModal'));
-  mindmapModal.show();
-
-  // Create and show mindmap after modal is shown
-  document.getElementById('mindmapModal').addEventListener('shown.bs.modal', function() {
-    // Initialize jsMind
-    const jm = new jsMind(options);
-    
-    // Show mindmap data
-    try {
-      jm.show(mindmapData);
-      currentFinalmapData = mindmapData;
-      
-      // Force resize after a short delay
-      setTimeout(() => {
-        if (jm && typeof jm.resize === 'function') {
-          jm.resize();
-        }
-      }, 200);
-    } catch (error) {
-      console.error('Error showing mindmap:', error);
-      showError('Failed to display mindmap. Please try again.');
-    }
-  }, { once: true });
-}
-
-// Function to handle view mindmap button click
-async function handleViewFinalmap() {
-  if (!currentFinalmapData) {
-    showError('No mindmap data available yet. Please ask a question first.');
-    return;
-  }
-  renderFinalmap(currentFinalmapData);
-}
-
-viewMindmapBtn.addEventListener("click", handleViewFinalmap);
 
 // Get experts for the roundtable
 async function getExperts(question) {
@@ -356,23 +193,7 @@ async function getExperts(question) {
     ${conversationContext}
 
     Available document content:
-    ${extractedData.pdfs
-      .map((pdf) => `PDF: ${pdf.filename}\nContent: ${pdf.content}`)
-      .join("\n\n")}
-    ${extractedData.excel
-      .map(
-        (excel) =>
-          `Excel: ${excel.filename}\nContent: ${JSON.stringify(excel.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.csv
-      .map(
-        (csv) => `CSV: ${csv.filename}\nContent: ${JSON.stringify(csv.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.docx
-      .map((docx) => `DOCX: ${docx.filename}\nContent: ${docx.content}`)
-      .join("\n\n")}
+    ${formatExtractedData()}
   `;
 
   try {
@@ -417,23 +238,7 @@ async function generateExpertQuestions(question, expert) {
 
   const documentContext = `
     Available document content:
-    ${extractedData.pdfs
-      .map((pdf) => `PDF: ${pdf.filename}\nContent: ${pdf.content}`)
-      .join("\n\n")}
-    ${extractedData.excel
-      .map(
-        (excel) =>
-          `Excel: ${excel.filename}\nContent: ${JSON.stringify(excel.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.csv
-      .map(
-        (csv) => `CSV: ${csv.filename}\nContent: ${JSON.stringify(csv.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.docx
-      .map((docx) => `DOCX: ${docx.filename}\nContent: ${docx.content}`)
-      .join("\n\n")}
+    ${formatExtractedData()}
   `;
 
   try {
@@ -490,23 +295,7 @@ async function getExpertAnswers(question, expert, expertQuestions) {
 
   const documentContext = `
     Available document content:
-    ${extractedData.pdfs
-      .map((pdf) => `PDF: ${pdf.filename}\nContent: ${pdf.content}`)
-      .join("\n\n")}
-    ${extractedData.excel
-      .map(
-        (excel) =>
-          `Excel: ${excel.filename}\nContent: ${JSON.stringify(excel.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.csv
-      .map(
-        (csv) => `CSV: ${csv.filename}\nContent: ${JSON.stringify(csv.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.docx
-      .map((docx) => `DOCX: ${docx.filename}\nContent: ${docx.content}`)
-      .join("\n\n")}
+    ${formatExtractedData()}
   `;
 
   try {
@@ -558,93 +347,6 @@ async function generateExpertSummary(question, expert, questionsAndAnswers) {
   }
 }
 
-// Helper to extract mermaid code from LLM response
-function extractMermaidCode(response) {
-  try {
-    const mermaidMatch = response.match(/```mermaid\s*([\s\S]*?)```/i);
-    if (!mermaidMatch || !mermaidMatch[1]) {
-      console.warn("No mermaid code block found in response");
-      return null;
-    }
-    const code = mermaidMatch[1].trim();
-    if (!code.startsWith("mindmap")) {
-      console.warn("Invalid mindmap code - does not start with mindmap");
-      return null;
-    }
-    return code;
-  } catch (error) {
-    console.error("Error extracting mermaid code:", error);
-    return null;
-  }
-}
-
-// Generate expert mindmap using LLM (after final answer)
-async function generateExpertMindmapWithLLM(
-  question,
-  expert,
-  questionsAndAnswers,
-  finalAnswer
-) {
-  const systemPrompt = `
-You are an assistant tasked with creating a Mermaid mindmap visualization. Follow these rules precisely:
-
-1. Format:
-   - First line: \`\`\`mermaid
-   - Second line: mindmap
-   - Use 2 spaces for each indentation level
-   - Root node: (( )) notation
-   - Child nodes: plain text without special formatting
-
-2. Content Rules:
-   - Use only alphanumeric characters and basic punctuation
-   - Avoid hyphens (-) at start of lines
-   - Keep node text concise (max 40 characters)
-   - No special characters or Unicode
-   - No HTML or markdown
-
-Example Structure:
-\`\`\`mermaid
-mindmap
-  root((Expert Analysis))
-    Finding 1
-      Detail A
-      Detail B
-    Finding 2
-      Detail C
-\`\`\`
-
-Create a focused mindmap showing the expert's key findings and their connection to the final answer.
-ONLY output the mermaid code block, nothing else.`;
-
-  const userMessage = `
-Context:
-Expert: ${expert.title}
-Specialty: ${expert.specialty}
-Question: ${question}
-
-Analysis:
-${questionsAndAnswers
-  .map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`)
-  .join("\n\n")}
-
-Summary: ${expert.summary}
-Conclusion: ${finalAnswer}
-
-Guidelines:
-1. Root: Expert's role as central node
-2. Level 1: Key findings/themes
-3. Level 2: Supporting evidence
-4. Level 3: Connection to final answer`;
-
-  try {
-    const response = await callOpenAI(systemPrompt, userMessage);
-    return extractMermaidCode(response);
-  } catch (error) {
-    console.error(`Failed to generate mindmap for ${expert.title}:`, error);
-    return null;
-  }
-}
-
 // Generate final answer
 async function generateFinalAnswer(question, expertsData) {
   showLoading("Synthesizing final answer...");
@@ -685,23 +387,7 @@ async function generateFinalAnswer(question, expertsData) {
       .join("\n\n")}
 
     Document Context:
-    ${extractedData.pdfs
-      .map((pdf) => `PDF: ${pdf.filename}\nContent: ${pdf.content}`)
-      .join("\n\n")}
-    ${extractedData.excel
-      .map(
-        (excel) =>
-          `Excel: ${excel.filename}\nContent: ${JSON.stringify(excel.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.csv
-      .map(
-        (csv) => `CSV: ${csv.filename}\nContent: ${JSON.stringify(csv.content)}`
-      )
-      .join("\n\n")}
-    ${extractedData.docx
-      .map((docx) => `DOCX: ${docx.filename}\nContent: ${docx.content}`)
-      .join("\n\n")}
+    ${formatExtractedData()}
   `;
 
   try {
@@ -729,7 +415,7 @@ async function extractPdfData(file) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         system_instruction: {
@@ -1110,10 +796,11 @@ async function addAnalysisResult(finalAnswer, expertsData) {
     if (expertsData) {
       // Expert analysis case - keep existing expert handling code
       showLoading("Generating cumulative mindmap...");
-      currentFinalmapData = await generateFinalmapData(
+      const mindmapData = await generateFinalmapData(
         expertsData[0].question,
         expertsData
       );
+      updateMindmapData(mindmapData);
       hideLoading();
       const expertReasoning = expertsData
         .map(
@@ -1395,7 +1082,7 @@ questionForm.addEventListener("submit", async (e) => {
 });
 
 // Process the question
-async function processQuestion(question) {
+export async function processQuestion(question, isFollowup = false) {
   try {
     addChatMessage(question, true);
     addToHistory(question, true);
@@ -1589,22 +1276,128 @@ ${formattedAnalysis}`;
   }
 }
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "default",
-  securityLevel: "loose",
-  mindmap: {
-    padding: 10,
-    useMaxWidth: true
-  },
-  flowchart: {
-    useMaxWidth: true,
-    htmlLabels: true,
-    curve: 'basis'
-  }
-});
+// Generate a related question based on node text and original question
+export async function generateRelatedQuestion(nodeText, originalQuestion) {
+  const systemPrompt = `You are an expert at generating insightful follow-up questions.
+Given a node text from a mindmap and the original question that generated it, create ONE specific follow-up question that:
+1. Explores the topic of the node text in more detail
+2. Relates back to the original question's context
+3. Is clear, concise, and focused
+4. Helps gain deeper insights
 
-// Function to check if question needs Excel analysis
+Return ONLY the question as a plain string, no JSON or other formatting.`;
+
+  const userMessage = `Original Question: "${originalQuestion}"
+Node Text: "${nodeText}"
+
+Generate a follow-up question that explores this specific aspect in more detail.`;
+
+  try {
+    const question = await callOpenAI(systemPrompt, userMessage);
+    return question.trim();
+  } catch (error) {
+    console.error('Error generating related question:', error);
+    throw new Error('Failed to generate a related question');
+  }
+}
+
+
+
+// Add event listeners for download buttons
+downloadCsvBtn.addEventListener('click', downloadCsv);
+downloadXlsxBtn.addEventListener('click', downloadXlsx);
+
+// Make processQuestion globally accessible
+window.processQuestion = async (question) => {
+  try {
+    const questionInput = document.getElementById("questionInput");
+    questionInput.value = '';
+    
+    // Clear any previous error states
+    questionInput.classList.remove('is-invalid');
+    
+    // Disable input and show loading state
+    questionInput.disabled = true;
+    showLoading("Processing your question...");
+    
+    await processQuestion(question, false);
+  } catch (error) {
+    console.error('Error processing question:', error);
+    showError('Failed to process question');
+  } finally {
+    // Re-enable input
+    questionInput.disabled = false;
+    hideLoading();
+  }
+};
+
+// Function to generate initial summary and questions
+async function generateInitialInsights() {
+  const systemPrompt = `
+    You are assisting a Clinical Development Director in analyzing uploaded documents.
+    Based on the provided documents, create:
+    1. A brief summary of the uploaded files
+    2. 3 relevant questions that would help analyze the data from a clinical development perspective
+    
+    Focus on aspects like:
+    - Clinical trial data and outcomes
+    - Safety and efficacy metrics
+    - Patient demographics and subgroups
+    - Protocol compliance
+    - Statistical significance
+    
+    Return in this JSON format:
+    {
+      "summary": "Brief summary of the documents",
+      "questions": [
+        "Question 1?",
+        "Question 2?",
+        "Question 3?"
+      ]
+    }`;
+
+  const documentContext = `
+    Available document content:
+    ${formatExtractedData()}
+  `;
+
+  try {
+    const response = await callOpenAI(systemPrompt, documentContext);
+    const result = JSON.parse(response);
+    
+    // Create and append the insight card to chat container
+    const card = document.createElement('div');
+    card.className = 'chat-message system-message mb-3';
+    
+    const content = `
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Document Analysis Summary</h5>
+          <p class="card-text">${result.summary}</p>
+          <h6 class="card-subtitle mb-2 mt-3">Suggested Questions:</h6>
+          <div class="suggested-questions">
+            ${result.questions.map(q => `
+              <div class="suggested-question mb-2">
+                <a href="#" class="text-primary" onclick="window.processQuestion('${q.replace(/'/g, "\\'")}'); return false;">
+                  <i class="bi bi-question-circle me-2"></i>${q}
+                </a>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    card.innerHTML = content;
+    chatContainer.appendChild(card);
+    
+  } catch (error) {
+    console.error('Failed to generate initial insights:', error);
+    showError('Failed to analyze uploaded documents');
+  }
+}
+
+
 async function needsExcelAnalysis(question) {
   const systemPrompt = `You are an assistant that determines if a question requires Excel/CSV data operations.
   Answer with ONLY "yes" or "no". 
@@ -1786,186 +1579,5 @@ Please format these results in a clear markdown format that directly addresses t
       null,
       2
     )}`;
-  }
-}
-
-// Function to download as CSV
-function downloadCsv() {
-  if (!currentAnalysisData) return;
-  
-  const headers = Object.keys(currentAnalysisData[0]);
-  const csvContent = [
-    headers.join(','),
-    ...currentAnalysisData.map(row => 
-      headers.map(header => 
-        JSON.stringify(row[header] || '')
-      ).join(',')
-    )
-  ].join('\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = 'analysis_result.csv';
-  link.click();
-}
-
-// Function to download as XLSX
-function downloadXlsx() {
-  if (!currentAnalysisData) return;
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(currentAnalysisData);
-  XLSX.utils.book_append_sheet(wb, ws, 'Analysis Result');
-  XLSX.writeFile(wb, 'analysis_result.xlsx');
-}
-
-// Generate a related question based on node text and original question
-async function generateRelatedQuestion(nodeText, originalQuestion) {
-  const systemPrompt = `You are an expert at generating insightful follow-up questions.
-Given a node text from a mindmap and the original question that generated it, create ONE specific follow-up question that:
-1. Explores the topic of the node text in more detail
-2. Relates back to the original question's context
-3. Is clear, concise, and focused
-4. Helps gain deeper insights
-
-Return ONLY the question as a plain string, no JSON or other formatting.`;
-
-  const userMessage = `Original Question: "${originalQuestion}"
-Node Text: "${nodeText}"
-
-Generate a follow-up question that explores this specific aspect in more detail.`;
-
-  try {
-    const question = await callOpenAI(systemPrompt, userMessage);
-    return question.trim();
-  } catch (error) {
-    console.error('Error generating related question:', error);
-    throw new Error('Failed to generate a related question');
-  }
-}
-
-function handleContainerClick(e) {
-  if (e.target.tagName === 'JMNODE') {
-    const nodeText = e.target.textContent;
-
-    if(!nodeText) {
-      console.error('No node text available');
-      return;
-    }
-
-    if (!currentQuestion) {
-      showError('No current question context available');
-      return;
-    }
-
-    generateRelatedQuestion(nodeText, currentQuestion)
-      .then(question => {
-        if (question) {
-          processQuestion(question, false);
-        }
-      })
-      .catch(error => {
-        showError(error.message);
-      });
-  }
-}
-
-container.addEventListener('dblclick', handleContainerClick);
-
-// Add event listeners for download buttons
-downloadCsvBtn.addEventListener('click', downloadCsv);
-downloadXlsxBtn.addEventListener('click', downloadXlsx);
-
-// Make processQuestion globally accessible
-window.processQuestion = async (question) => {
-  try {
-    const questionInput = document.getElementById("questionInput");
-    questionInput.value = '';
-    
-    // Clear any previous error states
-    questionInput.classList.remove('is-invalid');
-    
-    // Disable input and show loading state
-    questionInput.disabled = true;
-    showLoading("Processing your question...");
-    
-    await processQuestion(question, false);
-  } catch (error) {
-    console.error('Error processing question:', error);
-    showError('Failed to process question');
-  } finally {
-    // Re-enable input
-    questionInput.disabled = false;
-    hideLoading();
-  }
-};
-
-// Function to generate initial summary and questions
-async function generateInitialInsights() {
-  const systemPrompt = `
-    You are assisting a Clinical Development Director in analyzing uploaded documents.
-    Based on the provided documents, create:
-    1. A brief summary of the uploaded files
-    2. 3 relevant questions that would help analyze the data from a clinical development perspective
-    
-    Focus on aspects like:
-    - Clinical trial data and outcomes
-    - Safety and efficacy metrics
-    - Patient demographics and subgroups
-    - Protocol compliance
-    - Statistical significance
-    
-    Return in this JSON format:
-    {
-      "summary": "Brief summary of the documents",
-      "questions": [
-        "Question 1?",
-        "Question 2?",
-        "Question 3?"
-      ]
-    }`;
-
-  const documentContext = `
-    Available document content:
-    ${extractedData.pdfs.map(pdf => `PDF: ${pdf.filename}\nContent: ${pdf.content}`).join('\n\n')}
-    ${extractedData.excel.map(excel => `Excel: ${excel.filename}\nContent: ${JSON.stringify(excel.content)}`).join('\n\n')}
-    ${extractedData.csv.map(csv => `CSV: ${csv.filename}\nContent: ${JSON.stringify(csv.content)}`).join('\n\n')}
-    ${extractedData.docx.map(docx => `DOCX: ${docx.filename}\nContent: ${docx.content}`).join('\n\n')}
-  `;
-
-  try {
-    const response = await callOpenAI(systemPrompt, documentContext);
-    const result = JSON.parse(response);
-    
-    // Create and append the insight card to chat container
-    const card = document.createElement('div');
-    card.className = 'chat-message system-message mb-3';
-    
-    const content = `
-      <div class="card">
-        <div class="card-body">
-          <h5 class="card-title">Document Analysis Summary</h5>
-          <p class="card-text">${result.summary}</p>
-          <h6 class="card-subtitle mb-2 mt-3">Suggested Questions:</h6>
-          <div class="suggested-questions">
-            ${result.questions.map(q => `
-              <div class="suggested-question mb-2">
-                <a href="#" class="text-primary" onclick="window.processQuestion('${q.replace(/'/g, "\\'")}'); return false;">
-                  <i class="bi bi-question-circle me-2"></i>${q}
-                </a>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-    `;
-    
-    card.innerHTML = content;
-    chatContainer.appendChild(card);
-    
-  } catch (error) {
-    console.error('Failed to generate initial insights:', error);
-    showError('Failed to analyze uploaded documents');
   }
 }
