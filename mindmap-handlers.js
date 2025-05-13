@@ -1,7 +1,4 @@
-import { callOpenAI } from './script.js';
-import { showError } from './script.js';
-import { generateRelatedQuestion } from './script.js';
-import { processQuestion } from './script.js';
+import { callOpenAI,showError,generateRelatedQuestion,processQuestion } from './script.js';
 
 // Store DOM elements and state
 let elements = {
@@ -10,12 +7,21 @@ let elements = {
     mindmapModal: null
 };
 
-// Store current mindmap data
+// Store current mindmap data and question
 let currentFinalmapData = null;
+let currentQuestion = null;
+
+// Function to update current question
+function updateCurrentQuestion(question) {
+    currentQuestion = question;
+}
 
 // Function to update mindmap data
 function updateMindmapData(data) {
     currentFinalmapData = data;
+    if (data && elements.viewMindmapBtn) {
+        elements.viewMindmapBtn.classList.remove('d-none');
+    }
 }
 
 // Initialize mindmap handlers with DOM elements
@@ -25,6 +31,9 @@ function initializeMindmap(domElements) {
         viewMindmapBtn: domElements.viewMindmapBtn,
         mindmapModal: domElements.mindmapModal
     };
+
+    // Initially hide the mindmap button
+    elements.viewMindmapBtn.classList.add('d-none');
 
     // Set up event listeners
     elements.container.addEventListener('dblclick', handleContainerClick);
@@ -97,14 +106,16 @@ function renderFinalmap(mindmapData) {
     mindmapModal.show();
 
     // Create and show mindmap after modal is shown
-    elements.mindmapModal.addEventListener('shown.bs.modal', function() {
+    const showMindmap = () => {
+        // Clear the container first
+        elements.container.innerHTML = '';
+
         // Initialize jsMind
         const jm = new jsMind(options);
         
         // Show mindmap data
         try {
             jm.show(mindmapData);
-            currentFinalmapData = mindmapData;
             
             // Force resize after a short delay
             setTimeout(() => {
@@ -114,8 +125,15 @@ function renderFinalmap(mindmapData) {
             }, 200);
         } catch (error) {
             console.error('Error showing mindmap:', error);
+            showError('Failed to render mindmap');
         }
-    });
+
+        // Remove the event listener
+        elements.mindmapModal.removeEventListener('shown.bs.modal', showMindmap);
+    };
+
+    // Add the event listener
+    elements.mindmapModal.addEventListener('shown.bs.modal', showMindmap);
 }
 
 // Function to handle view mindmap button click
@@ -244,6 +262,6 @@ export {
     initializeMindmap,
     generateFinalmapData,
     generateExpertMindmapWithLLM,
-    currentFinalmapData,
-    updateMindmapData
+    updateMindmapData,
+    updateCurrentQuestion
 };
